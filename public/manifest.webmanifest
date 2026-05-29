@@ -1,0 +1,46 @@
+{
+  "name": "NeonPocket Console",
+  "short_name": "NeonPocket",
+  "description": "Mobile-first Neon.tech management console with secure API-key access and real project operations.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
+  "background_color": "#020202",
+  "theme_color": "#0A0A0A",
+  "orientation": "portrait-primary",
+  "categories": ["developer", "productivity", "utilities"],
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Connect Neon API key",
+      "short_name": "Connect",
+      "description": "Open NeonPocket Console and connect a Neon API key.",
+      "url": "/connect",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Diagnostics",
+      "short_name": "Diagnostics",
+      "description": "Open the NeonPocket diagnostics report.",
+      "url": "/diagnostics",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ]
+}
