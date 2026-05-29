@@ -1,11 +1,14 @@
+import { useEffect, useState } from "react";
 import { Page, PageHeader } from "@/layout/PageHeader";
 import { useApp } from "@/state/AppContext";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Lock, LogOut, Trash2 } from "lucide-react";
+import { Lock, LogOut, Trash2, Volume2 } from "lucide-react";
+import { removeVaultPassphrase, vaultUsesPassphrase } from "@/lib/vault";
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
@@ -20,9 +23,33 @@ function Row({ title, desc, children }: { title: string; desc?: string; children
 }
 
 export default function Settings() {
-  const { settings, updateSettings, signOut, forgetStoredKey, hasStoredVault, diagnostics, clearDiagnostics, clearLocalCache } = useApp();
+  const { settings, updateSettings, signOut, forgetStoredKey, hasStoredVault, diagnostics, clearDiagnostics, clearLocalCache, refreshVaultState, playUiSound } = useApp();
   const navigate = useNavigate();
   const lastFailed = diagnostics.find(d => !d.ok);
+  const [usesPassphrase, setUsesPassphrase] = useState(false);
+  const [passphrase, setPassphrase] = useState("");
+  const [removingPassphrase, setRemovingPassphrase] = useState(false);
+
+  useEffect(() => {
+    vaultUsesPassphrase().then(setUsesPassphrase).catch(() => setUsesPassphrase(false));
+  }, [hasStoredVault]);
+
+  async function removePassphrase() {
+    setRemovingPassphrase(true);
+    try {
+      await removeVaultPassphrase(passphrase);
+      setPassphrase("");
+      setUsesPassphrase(false);
+      await refreshVaultState();
+      playUiSound("success");
+      toast.success("Passphrase removed", { description: "The stored key now unlocks with this device only." });
+    } catch (error: any) {
+      playUiSound("warning");
+      toast.error("Could not remove passphrase", { description: error?.message || "Unknown error" });
+    } finally {
+      setRemovingPassphrase(false);
+    }
+  }
 
   return (
     <Page>
@@ -43,8 +70,13 @@ export default function Settings() {
             <SelectContent><SelectItem value="full">Full</SelectItem><SelectItem value="reduced">Reduced</SelectItem></SelectContent>
           </Select>
         </Row>
-        <Row title="Interface sounds" desc="Subtle UI sounds (off by default).">
-          <Switch checked={settings.sounds} onCheckedChange={v => updateSettings({ sounds: v })} />
+        <Row title="Interface sounds" desc="Minimal Web Audio feedback for taps, navigation, inputs, and confirmations.">
+          <div className="flex items-center gap-2 justify-end">
+            <Button variant="ghost" size="icon" className="size-8" onClick={() => playUiSound("enabled")} disabled={!settings.sounds} aria-label="Test sound">
+              <Volume2 className="size-4" />
+            </Button>
+            <Switch checked={settings.sounds} onCheckedChange={v => updateSettings({ sounds: v })} />
+          </div>
         </Row>
       </div>
 
@@ -68,20 +100,40 @@ export default function Settings() {
       <div className="hairline rounded-lg p-4 bg-card mt-4">
         <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Local vault</div>
         <Row title="Stored key on this device">
-          <span className="text-sm mono text-muted-foreground">{hasStoredVault ? "present" : "none"}</span>
+          <span className="text-sm mono text-muted-foreground">{hasStoredVault ? (usesPassphrase ? "present · passphrase" : "present · device") : "none"}</span>
         </Row>
+        {hasStoredVault && usesPassphrase && (
+          <div className="py-3 border-b border-border space-y-2">
+            <div>
+              <div className="text-sm font-medium">Remove passphrase</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Enter the current passphrase once. The key will be re-encrypted for this device without a passphrase.</div>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input
+                type="password"
+                value={passphrase}
+                onChange={e => setPassphrase(e.target.value)}
+                placeholder="Current passphrase"
+                autoComplete="current-password"
+              />
+              <Button variant="outline" onClick={removePassphrase} disabled={!passphrase || removingPassphrase} className="sm:w-44">
+                {removingPassphrase ? "Removing…" : "Remove"}
+              </Button>
+            </div>
+          </div>
+        )}
         <Row title="Forget local key" desc="Removes the encrypted Neon API key from this device.">
-          <Button variant="outline" size="sm" onClick={async () => { await forgetStoredKey(); toast.success("Removed"); }} disabled={!hasStoredVault}>
+          <Button variant="outline" size="sm" onClick={async () => { await forgetStoredKey(); setUsesPassphrase(false); playUiSound("warning"); toast.success("Removed"); }} disabled={!hasStoredVault}>
             <Lock className="size-4 mr-1.5" />Forget
           </Button>
         </Row>
         <Row title="Clear local cache" desc="Clears UI preferences cache, selection, and diagnostics.">
-          <Button variant="outline" size="sm" onClick={() => { clearLocalCache(); toast.success("Cleared"); }}>
+          <Button variant="outline" size="sm" onClick={() => { clearLocalCache(); playUiSound("soft"); toast.success("Cleared"); }}>
             <Trash2 className="size-4 mr-1.5" />Clear
           </Button>
         </Row>
         <Row title="Sign out" desc="Clears the in-memory API key.">
-          <Button variant="destructive" size="sm" onClick={() => { signOut(); navigate("/connect"); }}>
+          <Button variant="destructive" size="sm" onClick={() => { signOut(); playUiSound("warning"); navigate("/connect"); }}>
             <LogOut className="size-4 mr-1.5" />Sign out
           </Button>
         </Row>
@@ -99,7 +151,7 @@ export default function Settings() {
           <span className="text-xs text-muted-foreground">See Diagnostics</span>
         </Row>
         <Row title="Recent requests">
-          <Button variant="ghost" size="sm" onClick={clearDiagnostics}>Clear log</Button>
+          <Button variant="ghost" size="sm" onClick={() => { clearDiagnostics(); playUiSound("soft"); }}>Clear log</Button>
         </Row>
         <div className="mt-2 max-h-56 overflow-auto hairline rounded-md text-[11px] mono">
           {diagnostics.length === 0 ? <div className="p-3 text-muted-foreground">No requests yet.</div> :
