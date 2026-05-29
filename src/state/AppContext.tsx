@@ -41,7 +41,7 @@ const SETTINGS_KEY = "neonpocket.settings.v1";
 const SELECT_KEY = "neonpocket.select.v1";
 
 const defaultSettings: Settings = {
-  theme: "system", motion: "full", sounds: false, apiMode: "direct", localHistory: false,
+  theme: "system", motion: "full", sounds: false, apiMode: "proxy", localHistory: false,
 };
 
 const Ctx = createContext<AppState | null>(null);

@@ -40,8 +40,9 @@ export default function Connect() {
       toast.success("Connected to Neon");
       navigate("/dashboard", { replace: true });
     } catch (e: any) {
-      const msg = isNormalizedError(e) ? `${e.status} · ${e.message}` : (e?.message || "Connection failed");
-      toast.error("Could not authenticate", { description: msg });
+      const normalized = isNormalizedError(e) ? e : null;
+      const msg = normalized ? `${normalized.status} · ${normalized.message}` : (e?.message || "Connection failed");
+      toast.error(normalized?.status === 0 ? "Could not reach Neon" : "Could not authenticate", { description: msg });
       throw e;
     }
   }
@@ -123,7 +124,7 @@ export default function Connect() {
                   </button>
                 </div>
                 <div className="text-[11px] text-muted-foreground">
-                  Create one in the Neon Console under <span className="mono">Account → API keys</span>.
+                  Generate one from your Neon profile: open <span className="mono">Account settings → API keys</span>, then create and copy an API key.
                 </div>
               </div>
 
