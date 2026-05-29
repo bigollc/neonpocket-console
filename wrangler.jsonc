@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "neonpocket-console",
+  "main": "workers/neon-proxy.ts",
+  "compatibility_date": "2026-05-29",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    "ALLOWED_ORIGINS": "",
+    "NEON_BASE_URL": "https://console.neon.tech/api/v2"
+  }
+}
