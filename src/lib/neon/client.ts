@@ -50,23 +50,40 @@ export async function callNeon<T = any>(path: string, opts: CallOptions): Promis
   };
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
 
+  const fetchViaProxy = () => fetch(`/api/neon-proxy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${opts.apiKey}` },
+    signal: opts.signal,
+    body: JSON.stringify({ method, path, query: opts.query, body: opts.body }),
+  });
+
   let res: Response;
   try {
     if (opts.mode === "direct") {
-      res = await fetch(directUrl, {
-        method, headers, signal: opts.signal,
-        body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-      });
+      try {
+        res = await fetch(directUrl, {
+          method, headers, signal: opts.signal,
+          body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+        });
+      } catch (directError: any) {
+        if (isAbort(directError)) throw directError;
+        emit({
+          ts: new Date().toISOString(),
+          route: `${route} (direct; retrying via proxy)`,
+          method,
+          status: 0,
+          ms: Math.round(performance.now() - started),
+          ok: false,
+          errorMessage: directError?.message || "Direct request failed; retrying via proxy",
+        });
+        res = await fetchViaProxy();
+      }
     } else {
-      res = await fetch(`/api/neon-proxy`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${opts.apiKey}` },
-        signal: opts.signal,
-        body: JSON.stringify({ method, path, query: opts.query, body: opts.body }),
-      });
+      res = await fetchViaProxy();
     }
   } catch (e: any) {
-    const err = normalizeError({ status: 0, route, message: e?.message || "Network error or CORS blocked" });
+    const fallbackHint = opts.mode === "direct" ? "; proxy fallback also failed" : "; proxy unavailable or blocked";
+    const err = normalizeError({ status: 0, route, message: `${e?.message || "Network error or CORS blocked"}${fallbackHint}` });
     emit({ ts: err.timestamp, route, method, status: 0, ms: Math.round(performance.now() - started), ok: false, errorMessage: err.message });
     throw err;
   }
