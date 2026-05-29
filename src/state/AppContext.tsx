@@ -2,9 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ApiMode } from "@/lib/neon/client";
 import { onDiagnostic, type DiagnosticEntry } from "@/lib/neon/client";
 import { hasVault, forgetKey } from "@/lib/vault";
+import { playSound } from "@/lib/sound";
 
 type Theme = "system" | "light" | "dark";
 type Motion = "full" | "reduced";
+
+type UiSound = "tap" | "soft" | "nav" | "success" | "warning" | "enabled";
 
 interface Settings {
   theme: Theme;
@@ -33,6 +36,7 @@ interface AppState {
 
   settings: Settings;
   updateSettings: (s: Partial<Settings>) => void;
+  playUiSound: (sound?: UiSound) => void;
 
   diagnostics: DiagnosticEntry[];
   clearDiagnostics: () => void;
@@ -136,6 +140,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // UI sound delegation for common controls. Keeps tiny feedback consistent without touching every button/input.
+  useEffect(() => {
+    if (!settings.sounds) return;
+    const onPointerUp = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest("button,a,[role='button'],[data-radix-collection-item]")) void playSound("tap");
+    };
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input,textarea,[role='combobox']")) void playSound("soft");
+    };
+    document.addEventListener("pointerup", onPointerUp, { passive: true });
+    document.addEventListener("focusin", onFocusIn);
+    return () => {
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("focusin", onFocusIn);
+    };
+  }, [settings.sounds]);
+
   // Vault presence
   const refreshVaultState = useCallback(async () => { setHasStoredVault(await hasVault()); }, []);
   useEffect(() => { refreshVaultState(); }, [refreshVaultState]);
@@ -166,7 +190,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await forgetKey(); await refreshVaultState();
   }, [refreshVaultState]);
 
-  const updateSettings = useCallback((s: Partial<Settings>) => setSettings(prev => ({ ...prev, ...s })), []);
+  const updateSettings = useCallback((s: Partial<Settings>) => setSettings(prev => {
+    const next = { ...prev, ...s };
+    if (!prev.sounds && next.sounds) void playSound("enabled");
+    return next;
+  }), []);
+  const playUiSound = useCallback((sound: UiSound = "tap") => {
+    if (settings.sounds) void playSound(sound);
+  }, [settings.sounds]);
   const clearDiagnostics = useCallback(() => setDiagnostics([]), []);
   const clearLocalCache = useCallback(() => {
     localStorage.removeItem(SELECT_KEY);
@@ -181,9 +212,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     selectedProjectId, setSelectedProjectId,
     selectedBranchId, setSelectedBranchId,
     selectedDatabase, setSelectedDatabase,
-    settings, updateSettings,
+    settings, updateSettings, playUiSound,
     diagnostics, clearDiagnostics, clearLocalCache,
-  }), [apiKey, hasStoredVault, selectedOrganizationId, selectedProjectId, selectedBranchId, selectedDatabase, settings, diagnostics, setApiKey, signOut, refreshVaultState, forgetStoredKey, setSelectedOrganizationId, setSelectedProjectId, setSelectedBranchId, updateSettings, clearDiagnostics, clearLocalCache]);
+  }), [apiKey, hasStoredVault, selectedOrganizationId, selectedProjectId, selectedBranchId, selectedDatabase, settings, diagnostics, setApiKey, signOut, refreshVaultState, forgetStoredKey, setSelectedOrganizationId, setSelectedProjectId, setSelectedBranchId, updateSettings, playUiSound, clearDiagnostics, clearLocalCache]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
