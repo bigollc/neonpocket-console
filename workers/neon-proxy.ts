@@ -3,6 +3,8 @@ const DEFAULT_NEON_BASE = "https://console.neon.tech/api/v2";
 interface Env {
   /** Static Vite app assets generated into ./dist and bound by wrangler.jsonc. */
   ASSETS: Fetcher;
+  /** Optional D1 binding for app profile/audit sync. The app works without it. */
+  DB?: any;
   /** Comma-separated browser origins allowed to call this Worker. Use exact origins, or * only during testing. */
   ALLOWED_ORIGINS?: string;
   /** Optional override for testing. Production should normally keep the default Neon Console API base. */
@@ -16,7 +18,20 @@ interface ForwardBody {
   body?: unknown;
 }
 
+interface AppProfileBody {
+  userName?: string;
+  email?: string;
+  keyHash?: string;
+  keyHint?: string;
+  deviceAuthEnabled?: boolean;
+  settings?: unknown;
+  userAgent?: string;
+  language?: string;
+  timezone?: string;
+}
+
 const PROXY_PATH = "/api/neon-proxy";
+const PROFILE_PATH = "/api/app-profile";
 
 const json = (body: unknown, status: number, headers: HeadersInit = {}) =>
   new Response(JSON.stringify(body), {
@@ -57,6 +72,122 @@ function corsHeaders(request: Request, env: Env) {
 function safeBase(env: Env) {
   const value = (env.NEON_BASE_URL || DEFAULT_NEON_BASE).replace(/\/+$/, "");
   return value || DEFAULT_NEON_BASE;
+}
+
+function clientIp(request: Request) {
+  return request.headers.get("CF-Connecting-IP") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
+}
+
+function normalizeProfile(body: AppProfileBody) {
+  const email = String(body.email || "").slice(0, 320);
+  const keyHash = String(body.keyHash || "").slice(0, 128);
+  const userId = keyHash || email || crypto.randomUUID();
+  return {
+    userId,
+    userName: String(body.userName || email || "Neon user").slice(0, 200),
+    email,
+    keyHash,
+    keyHint: String(body.keyHint || "").slice(0, 32),
+    deviceAuthEnabled: body.deviceAuthEnabled ? 1 : 0,
+    settingsJson: JSON.stringify(body.settings || {}),
+    userAgent: String(body.userAgent || "").slice(0, 600),
+    language: String(body.language || "").slice(0, 80),
+    timezone: String(body.timezone || "").slice(0, 120),
+  };
+}
+
+async function ensureProfileSchema(db: any) {
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS app_profiles (
+      user_id TEXT PRIMARY KEY,
+      email TEXT,
+      user_name TEXT,
+      neon_key_hash TEXT,
+      neon_key_hint TEXT,
+      device_auth_enabled INTEGER NOT NULL DEFAULT 0,
+      settings_json TEXT,
+      user_agent TEXT,
+      language TEXT,
+      timezone TEXT,
+      last_ip TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS app_audit_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      event TEXT NOT NULL,
+      ip TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL
+    );
+  `);
+}
+
+async function handleAppProfile(request: Request, env: Env) {
+  const cors = corsHeaders(request, env);
+
+  if (request.method === "OPTIONS") {
+    return cors ? new Response(null, { status: 204, headers: cors }) : json({ error: "Origin is not allowed" }, 403);
+  }
+  if (!cors) return json({ error: "Origin is not allowed" }, 403);
+  if (request.method !== "POST") return json({ error: "Only POST is supported" }, 405, cors);
+
+  if (!env.DB) {
+    return json({ ok: true, stored: false, reason: "D1 binding is not configured" }, 200, cors);
+  }
+
+  let body: AppProfileBody;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON body" }, 400, cors);
+  }
+
+  const profile = normalizeProfile(body);
+  const now = new Date().toISOString();
+  const ip = clientIp(request);
+
+  await ensureProfileSchema(env.DB);
+  await env.DB.prepare(`
+    INSERT INTO app_profiles (
+      user_id, email, user_name, neon_key_hash, neon_key_hint, device_auth_enabled,
+      settings_json, user_agent, language, timezone, last_ip, created_at, updated_at
+    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+    ON CONFLICT(user_id) DO UPDATE SET
+      email=excluded.email,
+      user_name=excluded.user_name,
+      neon_key_hash=excluded.neon_key_hash,
+      neon_key_hint=excluded.neon_key_hint,
+      device_auth_enabled=excluded.device_auth_enabled,
+      settings_json=excluded.settings_json,
+      user_agent=excluded.user_agent,
+      language=excluded.language,
+      timezone=excluded.timezone,
+      last_ip=excluded.last_ip,
+      updated_at=excluded.updated_at
+  `).bind(
+    profile.userId,
+    profile.email,
+    profile.userName,
+    profile.keyHash,
+    profile.keyHint,
+    profile.deviceAuthEnabled,
+    profile.settingsJson,
+    profile.userAgent,
+    profile.language,
+    profile.timezone,
+    ip,
+    now,
+    now,
+  ).run();
+
+  await env.DB.prepare(`
+    INSERT INTO app_audit_events (id, user_id, event, ip, user_agent, created_at)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+  `).bind(crypto.randomUUID(), profile.userId, "profile_synced", ip, profile.userAgent, now).run();
+
+  return json({ ok: true, stored: true }, 200, cors);
 }
 
 async function handleNeonProxy(request: Request, env: Env) {
@@ -141,9 +272,8 @@ async function handleNeonProxy(request: Request, env: Env) {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === PROXY_PATH) {
-      return handleNeonProxy(request, env);
-    }
+    if (url.pathname === PROXY_PATH) return handleNeonProxy(request, env);
+    if (url.pathname === PROFILE_PATH) return handleAppProfile(request, env);
 
     return env.ASSETS.fetch(request);
   },
