@@ -11,41 +11,6 @@ import { useApp } from "@/state/AppContext";
 import { NEON_BASE, NEON_PROXY_URL } from "@/lib/neon/client";
 import { NeonService } from "@/lib/neon/service";
 
-const shortcutRecipe = `Create an iOS Shortcut named exactly: NeonPocket Bridge
-
-Purpose:
-- Reads the JSON request copied by NeonPocket from Clipboard.
-- Calls Neon outside Safari/WebKit, so browser CORS does not apply.
-- Opens the callback URL with a base64-encoded JSON result.
-
-Expected clipboard request JSON:
-{
-  "id": "request id",
-  "neonBase": "https://console.neon.tech/api/v2",
-  "callbackUrl": "https://your-app/diagnostics#neonpocket_bridge=",
-  "method": "GET | POST | PATCH | DELETE | PUT",
-  "path": "/users/me",
-  "query": { "limit": 400 },
-  "body": {},
-  "apiKey": "napi_..."
-}
-
-Shortcut output contract:
-1. Perform the HTTP request to neonBase + path + query.
-2. Send headers:
-   Authorization: Bearer <apiKey>
-   Accept: application/json
-   Content-Type: application/json when body exists
-3. Build JSON:
-{
-  "id": "same request id",
-  "status": 200,
-  "headers": { "content-type": "application/json" },
-  "body": "raw response text"
-}
-4. UTF-8 encode this JSON, Base64 encode it, URL encode it.
-5. Open URL: callbackUrl + encodedResult`;
-
 function redact(value: string | null | undefined) {
   if (!value) return null;
   return `${value.slice(0, 5)}…${value.slice(-4)}`;
@@ -76,11 +41,6 @@ export default function Diagnostics() {
   async function copyReport() {
     await navigator.clipboard.writeText(reportText);
     toast.success("Diagnostics copied");
-  }
-
-  async function copyShortcutRecipe() {
-    await navigator.clipboard.writeText(shortcutRecipe);
-    toast.success("Shortcut recipe copied");
   }
 
   async function runChecks() {
@@ -120,26 +80,13 @@ export default function Diagnostics() {
 
       <Alert className="mb-4">
         <Activity className="size-4" />
-        <AlertTitle>Auto transport</AlertTitle>
+        <AlertTitle>Cloudflare Worker proxy</AlertTitle>
         <AlertDescription>
-          Auto mode tries <span className="mono">{NEON_BASE}</span> first. If Safari/browser returns <span className="mono">Load failed</span>,
-          it falls back to <span className="mono">{NEON_PROXY_URL}</span>. If the static host does not execute proxy routes, iPhone/iPad Safari can use
-          <span className="mono"> Shortcut Bridge</span> transport so the request runs in iOS Shortcuts instead of the browser.
+          Auto mode tries <span className="mono">{NEON_BASE}</span> first. If the browser blocks the direct request, it falls back to
+          <span className="mono"> {NEON_PROXY_URL}</span>. For Lovable/static deployments, set <span className="mono">VITE_NEON_PROXY_URL</span>
+          to your Cloudflare Worker URL because static hosting does not execute <span className="mono">/api/neon-proxy</span>.
         </AlertDescription>
       </Alert>
-
-      <div className="hairline rounded-lg bg-card p-3 mb-4 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <div className="text-sm font-medium">iOS Shortcut Bridge</div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              Use Settings → API transport → Shortcut Bridge if Safari blocks direct Neon API calls and no backend proxy is configured.
-            </div>
-          </div>
-          <Button variant="outline" size="sm" onClick={copyShortcutRecipe}>Copy recipe</Button>
-        </div>
-        <Textarea value={shortcutRecipe} readOnly className="min-h-[220px] mono text-[11px]" />
-      </div>
 
       {!apiKey && (
         <div className="hairline rounded-lg bg-card p-3 mb-4 space-y-1.5">
