@@ -120,11 +120,12 @@
     @apply bg-[hsl(var(--glass))] backdrop-blur-xl backdrop-saturate-150;
   }
   .hairline {
-    @apply border border-border;
+    @apply min-w-0 border border-border;
   }
   .mono {
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     font-feature-settings: "zero", "ss02";
+    overflow-wrap: anywhere;
   }
 }
 

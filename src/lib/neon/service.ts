@@ -1,15 +1,27 @@
 import { callNeon, type ApiMode } from "./client";
 import type {
   NeonProject, NeonBranch, NeonDatabase, NeonRole, NeonEndpoint, NeonOperation,
-  NeonOrganization, NeonApiKey, NeonConsumption, NeonDataApi,
+  NeonOrganization, NeonUser, NeonApiKey, NeonConsumption, NeonDataApi,
 } from "./types";
 
 interface Ctx { apiKey: string; mode: ApiMode; signal?: AbortSignal }
 
 export const NeonService = {
+  // Account / organizations
+  getCurrentUser: (c: Ctx) =>
+    callNeon<{ user: NeonUser } | NeonUser>("/users/me", { ...c }),
+  listOrganizations: (c: Ctx) =>
+    callNeon<{ organizations: NeonOrganization[] }>("/users/me/organizations", { ...c }),
+  getOrganization: (c: Ctx, orgId: string) =>
+    callNeon<{ organization: NeonOrganization }>(`/organizations/${orgId}`, { ...c }),
+  listOrganizationMembers: (c: Ctx, orgId: string) =>
+    callNeon<any>(`/organizations/${orgId}/members`, { ...c, query: { limit: 100 } }),
+  listOrganizationApiKeys: (c: Ctx, orgId: string) =>
+    callNeon<{ api_keys: NeonApiKey[] } | { keys: NeonApiKey[] }>(`/organizations/${orgId}/api_keys`, { ...c }),
+
   // Projects
-  listProjects: (c: Ctx) =>
-    callNeon<{ projects: NeonProject[] }>("/projects", { ...c }),
+  listProjects: (c: Ctx, orgId?: string | null) =>
+    callNeon<{ projects: NeonProject[] }>("/projects", { ...c, query: { limit: 400, org_id: orgId || undefined } }),
   getProject: (c: Ctx, projectId: string) =>
     callNeon<{ project: NeonProject }>(`/projects/${projectId}`, { ...c }),
   createProject: (c: Ctx, project: Partial<NeonProject>) =>
@@ -65,15 +77,11 @@ export const NeonService = {
   refreshDataApiCache: (c: Ctx, projectId: string, branchId: string, database: string) =>
     callNeon<any>(`/projects/${projectId}/branches/${branchId}/data-api/${encodeURIComponent(database)}`, { ...c, method: "PATCH", body: {} }),
 
-  // Orgs / API keys / consumption / regions
-  listOrganizations: (c: Ctx) =>
-    callNeon<{ organizations: NeonOrganization[] }>(`/users/me/organizations`, { ...c }),
+  // API keys / consumption / regions
   listApiKeys: (c: Ctx) =>
     callNeon<NeonApiKey[]>(`/api_keys`, { ...c }),
   consumption: (c: Ctx, query?: Record<string, string>) =>
     callNeon<NeonConsumption>(`/consumption/projects`, { ...c, query }),
   listRegions: (c: Ctx) =>
     callNeon<any>(`/regions`, { ...c }),
-  currentUser: (c: Ctx) =>
-    callNeon<any>(`/users/me`, { ...c }),
 };

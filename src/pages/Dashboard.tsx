@@ -1,13 +1,13 @@
 import { Link } from "react-router-dom";
 import { Page, PageHeader } from "@/layout/PageHeader";
 import { useApp } from "@/state/AppContext";
-import { useProjectsQuery, useBranchesQuery, useDatabasesQuery, useRolesQuery, useEndpointsQuery, useOperationsQuery } from "@/state/queries";
+import { useProjectsQuery, useBranchesQuery, useDatabasesQuery, useRolesQuery, useEndpointsQuery, useOperationsQuery, useOrganizationsQuery, DEFAULT_WORKSPACE_ID } from "@/state/queries";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-dot";
-import { Activity, Cable, Database, GitBranch, KeyRound, Plus, TerminalSquare } from "lucide-react";
+import { Activity, Building2, Cable, Database, FolderGit2, GitBranch, KeyRound, Plus, TerminalSquare } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: React.ReactNode }) {
@@ -21,7 +21,8 @@ function Stat({ label, value, hint }: { label: string; value: React.ReactNode; h
 }
 
 export default function Dashboard() {
-  const { selectedProjectId, selectedBranchId } = useApp();
+  const { selectedOrganizationId, setSelectedOrganizationId, selectedProjectId, selectedBranchId } = useApp();
+  const orgs = useOrganizationsQuery();
   const projects = useProjectsQuery();
   const branches = useBranchesQuery(selectedProjectId);
   const databases = useDatabasesQuery(selectedProjectId, selectedBranchId);
@@ -31,13 +32,58 @@ export default function Dashboard() {
 
   const proj = projects.data?.projects?.find((p: any) => p.id === selectedProjectId);
 
+  if (!selectedOrganizationId) {
+    return (
+      <Page>
+        <PageHeader title="Dashboard" description="Choose an organization first, then select one of its projects." />
+        {orgs.isLoading ? <Skeleton className="h-32 w-full" /> : (
+          <div className="grid md:grid-cols-2 gap-3">
+            <button onClick={() => setSelectedOrganizationId(DEFAULT_WORKSPACE_ID)} className="hairline rounded-lg bg-card p-4 text-left hover:bg-accent/40 transition-colors">
+              <div className="flex items-center gap-2 text-sm font-medium"><Building2 className="size-4" /> Default workspace</div>
+              <div className="mt-1 text-xs text-muted-foreground">List projects available without an explicit organization filter.</div>
+            </button>
+            {orgs.data?.unavailable && (
+              <div className="hairline rounded-lg bg-card p-4 text-left md:col-span-2">
+                <div className="text-sm font-medium">Organization list unavailable for this key</div>
+                <div className="mt-1 text-xs text-muted-foreground break-words">You can still use the default workspace to list projects accessible to this API key.</div>
+              </div>
+            )}
+            {(orgs.data?.organizations || []).map((org: any) => (
+              <button key={org.id} onClick={() => setSelectedOrganizationId(org.id)} className="hairline rounded-lg bg-card p-4 text-left hover:bg-accent/40 transition-colors">
+                <div className="flex items-center gap-2 text-sm font-medium"><Building2 className="size-4" /> {org.name}</div>
+                <div className="mt-1 text-xs text-muted-foreground mono truncate">{org.id}</div>
+                {org.role && <div className="mt-2 inline-flex rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{org.role}</div>}
+              </button>
+            ))}
+          </div>
+        )}
+      </Page>
+    );
+  }
+
   if (projects.isLoading) return <Page><Skeleton className="h-32 w-full" /></Page>;
   if (projects.error) return <Page><ErrorState error={projects.error} onRetry={() => projects.refetch()} /></Page>;
   if (!projects.data?.projects?.length) {
     return (
       <Page>
-        <PageHeader title="Dashboard" />
-        <EmptyState title="No projects in your Neon account" description="Create your first Neon project to get started." />
+        <PageHeader title="Dashboard" description="No projects are available in the selected organization." />
+        <EmptyState icon={FolderGit2} title="No projects in this workspace" description="Choose another organization or create a Neon project in the selected workspace." />
+      </Page>
+    );
+  }
+  if (!selectedProjectId || !proj) {
+    return (
+      <Page>
+        <PageHeader title="Dashboard" description="Select a project from the top bar to unlock project and branch tools." />
+        <div className="grid md:grid-cols-2 gap-3">
+          {projects.data.projects.map((project: any) => (
+            <div key={project.id} className="hairline rounded-lg bg-card p-4">
+              <div className="flex items-center gap-2 text-sm font-medium"><FolderGit2 className="size-4" /> {project.name}</div>
+              <div className="mt-1 text-xs text-muted-foreground mono truncate">{project.id}</div>
+              <div className="mt-2 text-xs text-muted-foreground">{project.region_id} · PostgreSQL {project.pg_version ?? "—"}</div>
+            </div>
+          ))}
+        </div>
       </Page>
     );
   }
