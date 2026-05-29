@@ -18,7 +18,7 @@ Open the app, paste your Neon Console API key (generate one from the Neon Consol
 
 - **Typed Neon API client** (`src/lib/neon/`) with two modes:
   - **Direct** — calls `https://console.neon.tech/api/v2/*` from the browser.
-  - **Fallback proxy** — the default mode. POSTs to `/api/neon-proxy` (`api/neon-proxy.ts`), a **stateless** forwarder that relays the current request and never persists keys, bodies, or responses. Vite serves the same proxy handler during local development.
+  - **Fallback proxy** — the default mode. POSTs to `VITE_NEON_PROXY_URL` when set, otherwise `/api/neon-proxy` (`api/neon-proxy.ts`), a **stateless** forwarder that relays the current request and never persists keys, bodies, or responses. Vite serves the same proxy handler during local development.
 - **Encrypted local vault** (`src/lib/vault.ts`): IndexedDB + Web Crypto AES-GCM. Optional PBKDF2 passphrase. Forget-key and clear-cache controls in Settings.
 - **Organization-first workspace flow**: the account shell loads the current user and organization list, requires a workspace before project tools appear, and fetches projects with `org_id` when an organization is selected.
 - **TanStack Query** for all remote data, with AbortController and operation polling (running operations are polled, finished/failed stop).
@@ -39,7 +39,19 @@ Capabilities differ by account, plan, organization role, beta access, and API ve
 
 ## CORS fallback
 
-NeonPocket defaults to **API mode → Fallback proxy** because direct browser calls to `console.neon.tech` can be blocked by CORS. Local `bun run dev` serves this route through Vite middleware. For production, deploy `api/neon-proxy.ts` to a platform that supports Web Fetch-style serverless handlers (for example Vercel Edge, Netlify, or Deno Deploy). The proxy forwards only to Neon's base URL, rejects non-Neon paths, and persists nothing.
+NeonPocket defaults to **API mode → Fallback proxy** because direct browser calls to `console.neon.tech` can be blocked by CORS. Local `bun run dev` serves this route through Vite middleware. The browser posts to `import.meta.env.VITE_NEON_PROXY_URL || "/api/neon-proxy"`, so production builds can point at an external proxy endpoint without code changes.
+
+For production, deploy `api/neon-proxy.ts` to a platform that actually runs backend/serverless code. The recommended target for this repository is a Vercel Edge/Web Fetch-style function exposed at `https://<your-vercel-project>.vercel.app/api/neon-proxy`; equivalent Netlify, Deno Deploy, or Supabase Edge deployments are also fine if they expose the same POST contract and call the shared `api/neon-proxy-handler.ts`. The proxy forwards only to Neon's base URL, rejects non-Neon paths, and persists nothing.
+
+### Lovable deployment note
+
+Lovable hosting can publish the Vite app as static files, and static hosting alone does **not** execute the `/api/neon-proxy` route. If `/api/neon-proxy` is not backed by a real serverless/edge deployment, the app must not be treated as successfully connected just because the static UI loaded: proxy requests will fail or be blocked. Deploy the proxy to a backend-capable target such as Vercel Edge at `https://<your-vercel-project>.vercel.app/api/neon-proxy`, then set Lovable's public environment variable to that absolute URL, for example:
+
+```env
+VITE_NEON_PROXY_URL=https://<your-vercel-project>.vercel.app/api/neon-proxy
+```
+
+Rebuild/redeploy the Lovable app after setting the variable so Vite embeds the public proxy URL in the client bundle.
 
 ## Security
 

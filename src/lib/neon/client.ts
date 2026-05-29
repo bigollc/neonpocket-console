@@ -1,6 +1,7 @@
 import { normalizeError, type NormalizedError } from "@/lib/errors";
 
 export const NEON_BASE = "https://console.neon.tech/api/v2";
+export const NEON_PROXY_URL = import.meta.env.VITE_NEON_PROXY_URL || "/api/neon-proxy";
 
 export type ApiMode = "direct" | "proxy";
 
@@ -50,7 +51,7 @@ export async function callNeon<T = any>(path: string, opts: CallOptions): Promis
   };
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
 
-  const fetchViaProxy = () => fetch(`/api/neon-proxy`, {
+  const fetchViaProxy = () => fetch(NEON_PROXY_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${opts.apiKey}` },
     signal: opts.signal,
