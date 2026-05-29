@@ -192,7 +192,7 @@ export default function Connect() {
 
               <div className="text-[11px] text-muted-foreground flex items-start gap-1.5">
                 <ShieldCheck className="size-3.5 mt-px shrink-0" />
-                <span>Your key stays on this device. Requests go directly from your browser to Neon's public API and are never sent through an app proxy.</span>
+                <span>Your key stays on this device. Auto mode calls Neon directly first and uses a configured proxy only if the browser blocks direct CORS/preflight.</span>
               </div>
             </div>
           )}
