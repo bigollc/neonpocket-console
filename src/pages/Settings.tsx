@@ -50,14 +50,13 @@ export default function Settings() {
 
       <div className="hairline rounded-lg p-4 bg-card mt-4">
         <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">API</div>
-        <Row title="API transport" desc="Auto tries direct browser access, then proxy, then iOS Shortcut Bridge on iPhone/iPad Safari when CORS blocks the browser.">
+        <Row title="API transport" desc="Auto tries direct browser access first, then falls back to the configured Cloudflare Worker proxy when needed.">
           <Select value={settings.apiMode} onValueChange={(v: any) => updateSettings({ apiMode: v })}>
-            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="auto">Auto</SelectItem>
               <SelectItem value="direct">Direct</SelectItem>
               <SelectItem value="proxy">Proxy</SelectItem>
-              <SelectItem value="shortcut">Shortcut Bridge</SelectItem>
             </SelectContent>
           </Select>
         </Row>
@@ -96,7 +95,7 @@ export default function Settings() {
         <Row title="Last failed route">
           <span className="block text-sm mono break-words">{lastFailed ? `${lastFailed.status} · ${lastFailed.route}` : "—"}</span>
         </Row>
-        <Row title="Network hint" desc="Status 0 typically indicates browser CORS, unavailable proxy, or an unfinished Shortcut Bridge handoff.">
+        <Row title="Network hint" desc="Status 0 usually means direct browser access failed or the configured Cloudflare Worker proxy is unavailable.">
           <span className="text-xs text-muted-foreground">See Diagnostics</span>
         </Row>
         <Row title="Recent requests">

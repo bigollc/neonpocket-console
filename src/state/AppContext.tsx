@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ApiMode } from "@/lib/neon/client";
-import { consumeShortcutBridgeResultFromLocation, onDiagnostic, type DiagnosticEntry } from "@/lib/neon/client";
+import { onDiagnostic, type DiagnosticEntry } from "@/lib/neon/client";
 import { hasVault, forgetKey } from "@/lib/vault";
 
 type Theme = "system" | "light" | "dark";
@@ -40,7 +40,7 @@ interface AppState {
 }
 
 const SETTINGS_KEY = "neonpocket.settings.v1";
-const SETTINGS_MIGRATION_KEY = "neonpocket.settings.v2.migrated";
+const SETTINGS_MIGRATION_KEY = "neonpocket.settings.v2.cloudflare-worker";
 const SELECT_KEY = "neonpocket.select.v1";
 
 const defaultSettings: Settings = {
@@ -52,8 +52,8 @@ const Ctx = createContext<AppState | null>(null);
 function loadSettings(): Settings {
   try {
     const loaded = { ...defaultSettings, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")) };
-    let apiMode: ApiMode = ["auto", "direct", "proxy", "shortcut"].includes(loaded.apiMode) ? loaded.apiMode : "auto";
-    if (apiMode === "direct" && !localStorage.getItem(SETTINGS_MIGRATION_KEY)) {
+    let apiMode: ApiMode = ["auto", "direct", "proxy"].includes(loaded.apiMode) ? loaded.apiMode : "auto";
+    if ((apiMode === "direct" || loaded.apiMode === "shortcut") && !localStorage.getItem(SETTINGS_MIGRATION_KEY)) {
       apiMode = "auto";
       localStorage.setItem(SETTINGS_MIGRATION_KEY, "1");
     }
@@ -104,7 +104,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Diagnostics ring buffer
   useEffect(() => {
-    consumeShortcutBridgeResultFromLocation();
     const push = (e: DiagnosticEntry) => setDiagnostics(d => [e, ...d].slice(0, 100));
     const off = onDiagnostic(push);
     const onError = (event: ErrorEvent) => push({
@@ -130,12 +129,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onUnhandled);
-    window.addEventListener("hashchange", consumeShortcutBridgeResultFromLocation);
     return () => {
       off();
       window.removeEventListener("error", onError);
       window.removeEventListener("unhandledrejection", onUnhandled);
-      window.removeEventListener("hashchange", consumeShortcutBridgeResultFromLocation);
     };
   }, []);
 
