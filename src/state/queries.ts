@@ -69,10 +69,13 @@ export function useOrganizationsQuery() {
 
 export function useProjectsQuery() {
   const { apiKey, settings, selectedOrganizationId } = useApp();
-  const orgId = selectedOrganizationId === DEFAULT_WORKSPACE_ID ? null : selectedOrganizationId;
+  const hasExplicitOrganization = !!selectedOrganizationId && selectedOrganizationId !== DEFAULT_WORKSPACE_ID;
+  const orgId = hasExplicitOrganization ? selectedOrganizationId : null;
+  const workspaceKey = selectedOrganizationId || DEFAULT_WORKSPACE_ID;
+
   return useQuery<{ projects: any[] }, NormalizedError>({
-    queryKey: ["projects", selectedOrganizationId, settings.apiMode],
-    enabled: !!apiKey && !!selectedOrganizationId,
+    queryKey: ["projects", workspaceKey, settings.apiMode],
+    enabled: !!apiKey,
     queryFn: async ({ signal }) => {
       const ctx = { ...ctxOf(apiKey, settings.apiMode), signal };
       try {
