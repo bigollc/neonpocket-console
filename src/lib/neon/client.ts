@@ -65,7 +65,12 @@ export async function callNeon<T = any>(path: string, opts: CallOptions): Promis
   } catch (e: any) {
     if (isAbort(e)) throw e;
     if (isNormalizedError(e)) throw e;
-    const err = normalizeError({ status: 0, route, message: e?.message || "Could not reach Neon API directly" });
+    const rawMessage = e?.message || "Could not reach Neon API directly";
+    const browserBlocked = /load failed|failed to fetch|networkerror|cors/i.test(rawMessage);
+    const message = browserBlocked
+      ? `Browser blocked the direct Neon API request (${rawMessage}). This usually means the browser could not complete the CORS/preflight request for https://console.neon.tech/api/v2.`
+      : rawMessage;
+    const err = normalizeError({ status: 0, route, message });
     emit({ ts: err.timestamp, route, method, status: 0, ms: Math.round(performance.now() - started), ok: false, errorMessage: err.message });
     throw err;
   }

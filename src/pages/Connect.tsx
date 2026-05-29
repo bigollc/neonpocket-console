@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Loader2, ShieldCheck, KeyRound, Lock, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -198,8 +198,9 @@ export default function Connect() {
           )}
         </div>
 
-        <div className="mt-4 text-center text-[11px] text-muted-foreground">
+        <div className="mt-4 text-center text-[11px] text-muted-foreground flex items-center justify-center gap-3">
           <a href="https://neon.com/docs/reference/api-reference" target="_blank" rel="noreferrer" className="underline underline-offset-4 hover:text-foreground">Neon API docs</a>
+          <Link to="/diagnostics" className="underline underline-offset-4 hover:text-foreground">Diagnostics</Link>
         </div>
       </motion.div>
     </div>
