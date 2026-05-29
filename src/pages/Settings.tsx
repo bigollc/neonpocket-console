@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Lock, LogOut, Trash2, Volume2 } from "lucide-react";
+import { Lock, LogOut, ShieldCheck, Trash2, Volume2 } from "lucide-react";
 import { removeVaultPassphrase, vaultUsesPassphrase } from "@/lib/vault";
+import { clearDeviceAuth, getDeviceAuthRecord, setupDeviceAuth, supportsDeviceAuth, verifyDeviceAuth } from "@/lib/deviceAuth";
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
@@ -29,10 +30,16 @@ export default function Settings() {
   const [usesPassphrase, setUsesPassphrase] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [removingPassphrase, setRemovingPassphrase] = useState(false);
+  const [deviceAuthEnabled, setDeviceAuthEnabled] = useState(false);
+  const [deviceAuthBusy, setDeviceAuthBusy] = useState(false);
 
   useEffect(() => {
     vaultUsesPassphrase().then(setUsesPassphrase).catch(() => setUsesPassphrase(false));
   }, [hasStoredVault]);
+
+  useEffect(() => {
+    setDeviceAuthEnabled(!!getDeviceAuthRecord());
+  }, []);
 
   async function removePassphrase() {
     setRemovingPassphrase(true);
@@ -49,6 +56,42 @@ export default function Settings() {
     } finally {
       setRemovingPassphrase(false);
     }
+  }
+
+  async function enableDeviceAuth() {
+    setDeviceAuthBusy(true);
+    try {
+      await setupDeviceAuth();
+      setDeviceAuthEnabled(true);
+      playUiSound("success");
+      toast.success("Device authentication enabled", { description: "Unlocking a stored key can now require Face ID, Touch ID, or platform authentication." });
+    } catch (error: any) {
+      playUiSound("warning");
+      toast.error("Could not set up device authentication", { description: error?.message || "Unknown error" });
+    } finally {
+      setDeviceAuthBusy(false);
+    }
+  }
+
+  async function testDeviceAuth() {
+    setDeviceAuthBusy(true);
+    try {
+      await verifyDeviceAuth();
+      playUiSound("success");
+      toast.success("Device authentication verified");
+    } catch (error: any) {
+      playUiSound("warning");
+      toast.error("Device authentication failed", { description: error?.message || "Unknown error" });
+    } finally {
+      setDeviceAuthBusy(false);
+    }
+  }
+
+  function disableDeviceAuth() {
+    clearDeviceAuth();
+    setDeviceAuthEnabled(false);
+    playUiSound("warning");
+    toast.success("Device authentication disabled");
   }
 
   return (
@@ -78,10 +121,37 @@ export default function Settings() {
             <Switch checked={settings.sounds} onCheckedChange={v => updateSettings({ sounds: v })} />
           </div>
         </Row>
+        <Row title="Greeting cards" desc="Show time-aware dashboard messages such as morning, day, evening, and night greetings.">
+          <Switch checked={settings.greetings} onCheckedChange={v => updateSettings({ greetings: v })} />
+        </Row>
       </div>
 
       <div className="hairline rounded-lg p-4 bg-card mt-4">
-        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">API</div>
+        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Security</div>
+        <Row title="Device authentication" desc="Uses your platform authenticator: Face ID on iPhone, Touch ID on Apple devices, or Windows Hello where available.">
+          <span className="text-sm mono text-muted-foreground">{deviceAuthEnabled ? "enabled" : "off"}</span>
+        </Row>
+        <div className="py-3 border-b border-border space-y-2">
+          <div className="text-xs text-muted-foreground">
+            Device authentication protects local unlocks only. Neon API keys still remain encrypted locally and are never stored in plaintext in the cloud profile database.
+          </div>
+          <div className="flex flex-wrap gap-2 justify-end">
+            {!deviceAuthEnabled ? (
+              <Button size="sm" variant="outline" onClick={enableDeviceAuth} disabled={!supportsDeviceAuth() || deviceAuthBusy}>
+                <ShieldCheck className="size-4 mr-1.5" />{deviceAuthBusy ? "Setting up…" : "Set up"}
+              </Button>
+            ) : (
+              <>
+                <Button size="sm" variant="outline" onClick={testDeviceAuth} disabled={deviceAuthBusy}>Test</Button>
+                <Button size="sm" variant="destructive" onClick={disableDeviceAuth} disabled={deviceAuthBusy}>Disable</Button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="hairline rounded-lg p-4 bg-card mt-4">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">API & Cloud profile</div>
         <Row title="API transport" desc="Auto tries direct browser access first, then falls back to the configured Cloudflare Worker proxy when needed.">
           <Select value={settings.apiMode} onValueChange={(v: any) => updateSettings({ apiMode: v })}>
             <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
@@ -91,6 +161,9 @@ export default function Settings() {
               <SelectItem value="proxy">Proxy</SelectItem>
             </SelectContent>
           </Select>
+        </Row>
+        <Row title="Cloud profile sync" desc="Optionally store profile metadata, settings, IP, user agent, and key hash/hint in Cloudflare D1. The Neon API key itself is not stored.">
+          <Switch checked={settings.cloudProfileSync} onCheckedChange={v => updateSettings({ cloudProfileSync: v })} />
         </Row>
         <Row title="Local history (SQL editor)" desc="Save scratch SQL on this device only.">
           <Switch checked={settings.localHistory} onCheckedChange={v => updateSettings({ localHistory: v })} />
