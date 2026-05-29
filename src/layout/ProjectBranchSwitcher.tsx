@@ -26,10 +26,14 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
   ], [orgs.data?.organizations, defaultName]);
 
   useEffect(() => {
+    if (!selectedOrganizationId && !orgs.isLoading && (orgs.data?.unavailable || orgs.data?.organizations?.length === 0)) {
+      setSelectedOrganizationId(DEFAULT_WORKSPACE_ID);
+      return;
+    }
     if (selectedOrganizationId && !workspaces.some(w => w.id === selectedOrganizationId) && !orgs.isLoading) {
       setSelectedOrganizationId(null);
     }
-  }, [orgs.isLoading, selectedOrganizationId, setSelectedOrganizationId, workspaces]);
+  }, [orgs.data, orgs.isLoading, selectedOrganizationId, setSelectedOrganizationId, workspaces]);
 
   useEffect(() => {
     if (selectedProjectId && projects.data?.projects && !projects.data.projects.some((p: any) => p.id === selectedProjectId)) {
