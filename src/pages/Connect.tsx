@@ -57,7 +57,8 @@ export default function Connect() {
       try {
         const currentUser = await NeonService.getCurrentUser({ apiKey: k, mode: settings.apiMode });
         if (!hasUserPayload(currentUser)) throw unexpectedProxyShapeError("GET /users/me");
-      } catch {
+      } catch (userError: any) {
+        if (isNormalizedError(userError) && userError.status === 0) throw userError;
         const projectList = await NeonService.listProjects({ apiKey: k, mode: settings.apiMode });
         if (!hasProjectsPayload(projectList)) throw unexpectedProxyShapeError("GET /projects");
       }
@@ -91,7 +92,7 @@ export default function Connect() {
       const k = await unlockKey(storedUsesPass ? unlockPass : undefined);
       await validateAndEnter(k);
     } catch (e: any) {
-      toast.error(e?.message || "Failed to unlock vault");
+      if (!isNormalizedError(e)) toast.error(e?.message || "Failed to unlock vault");
     } finally { setLoading(false); }
   }
 
