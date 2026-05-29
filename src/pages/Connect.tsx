@@ -11,7 +11,9 @@ import { Logo } from "@/components/Logo";
 import { useApp } from "@/state/AppContext";
 import { NeonService } from "@/lib/neon/service";
 import { hasVault, vaultUsesPassphrase, saveKey, unlockKey, forgetKey } from "@/lib/vault";
+import { hasDeviceAuth, verifyDeviceAuth } from "@/lib/deviceAuth";
 import { isNormalizedError, normalizeError } from "@/lib/errors";
+import { syncCloudProfile } from "@/lib/cloudProfile";
 
 function hasUserPayload(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== "object") return false;
@@ -36,8 +38,18 @@ function unexpectedNeonShapeError(route: string) {
   });
 }
 
+function userEmailFromPayload(value: any) {
+  const user = value?.user ?? value;
+  return user?.email || user?.auth_accounts?.find?.((a: any) => a.email)?.email || "";
+}
+
+function userNameFromPayload(value: any) {
+  const user = value?.user ?? value;
+  return user?.name || user?.login || userEmailFromPayload(value) || "Neon user";
+}
+
 export default function Connect() {
-  const { setApiKey, settings, refreshVaultState } = useApp();
+  const { setApiKey, settings, refreshVaultState, playUiSound } = useApp();
   const navigate = useNavigate();
   const [apiKey, setKey] = useState("");
   const [show, setShow] = useState(false);
@@ -61,8 +73,9 @@ export default function Connect() {
 
   async function validateAndEnter(k: string) {
     try {
+      let currentUser: any = null;
       try {
-        const currentUser = await NeonService.getCurrentUser({ apiKey: k, mode: settings.apiMode });
+        currentUser = await NeonService.getCurrentUser({ apiKey: k, mode: settings.apiMode });
         if (!hasUserPayload(currentUser)) throw unexpectedNeonShapeError("GET /users/me");
       } catch (userError: any) {
         if (isNormalizedError(userError) && userError.status === 0) throw userError;
@@ -70,11 +83,26 @@ export default function Connect() {
         if (!hasProjectsPayload(projectList)) throw unexpectedNeonShapeError("GET /projects");
       }
       setApiKey(k);
+      if (settings.cloudProfileSync) {
+        void syncCloudProfile({
+          apiKey: k,
+          userName: userNameFromPayload(currentUser),
+          email: userEmailFromPayload(currentUser),
+          deviceAuthEnabled: hasDeviceAuth(),
+          settings: {
+            greetings: settings.greetings,
+            sounds: settings.sounds,
+            apiMode: settings.apiMode,
+          },
+        });
+      }
+      playUiSound("success");
       toast.success("Connected to Neon");
       navigate("/dashboard", { replace: true });
     } catch (e: any) {
       const normalized = isNormalizedError(e) ? e : null;
       const msg = normalized ? `${normalized.status} · ${normalized.message}` : (e?.message || "Connection failed");
+      playUiSound("warning");
       toast.error(normalized?.status === 0 ? "Could not reach Neon" : "Could not authenticate", { description: msg });
       throw e;
     }
@@ -96,9 +124,11 @@ export default function Connect() {
   async function onUnlock() {
     setLoading(true);
     try {
+      if (hasDeviceAuth()) await verifyDeviceAuth();
       const k = await unlockKey(storedUsesPass ? unlockPass : undefined);
       await validateAndEnter(k);
     } catch (e: any) {
+      playUiSound("warning");
       if (!isNormalizedError(e)) toast.error(e?.message || "Failed to unlock vault");
     } finally { setLoading(false); }
   }
@@ -107,6 +137,7 @@ export default function Connect() {
     await forgetKey();
     setStoredExists(false);
     await refreshVaultState();
+    playUiSound("warning");
     toast.success("Local key removed from this device");
   }
 
@@ -128,6 +159,11 @@ export default function Connect() {
               <div className="flex items-center gap-2 text-sm">
                 <Lock className="size-4" /> <span>Encrypted key found on this device</span>
               </div>
+              {hasDeviceAuth() && (
+                <div className="rounded-md bg-primary/10 text-primary p-2 text-xs">
+                  Device authentication is enabled. Unlock may request Face ID, Touch ID, or your platform authenticator.
+                </div>
+              )}
               {storedUsesPass && (
                 <div className="space-y-1.5">
                   <Label htmlFor="up">Passphrase</Label>
