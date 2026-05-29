@@ -24,6 +24,9 @@ export default function Connect() {
   const [storedExists, setStoredExists] = useState(false);
   const [storedUsesPass, setStoredUsesPass] = useState(false);
   const [unlockPass, setUnlockPass] = useState("");
+  const normalizedKey = apiKey.replace(/\s+/g, "");
+  const looksLikeLegacyPrefix = normalizedKey.toLowerCase().startsWith("neon_");
+  const looksLikeApiKey = normalizedKey.toLowerCase().startsWith("napi_");
 
   useEffect(() => {
     (async () => {
@@ -35,24 +38,29 @@ export default function Connect() {
 
   async function validateAndEnter(k: string) {
     try {
-      await NeonService.listProjects({ apiKey: k, mode: settings.apiMode });
+      try {
+        await NeonService.getCurrentUser({ apiKey: k, mode: settings.apiMode });
+      } catch {
+        await NeonService.listProjects({ apiKey: k, mode: settings.apiMode });
+      }
       setApiKey(k);
       toast.success("Connected to Neon");
       navigate("/dashboard", { replace: true });
     } catch (e: any) {
-      const msg = isNormalizedError(e) ? `${e.status} · ${e.message}` : (e?.message || "Connection failed");
-      toast.error("Could not authenticate", { description: msg });
+      const normalized = isNormalizedError(e) ? e : null;
+      const msg = normalized ? `${normalized.status} · ${normalized.message}` : (e?.message || "Connection failed");
+      toast.error(normalized?.status === 0 ? "Could not reach Neon" : "Could not authenticate", { description: msg });
       throw e;
     }
   }
 
   async function onConnect() {
-    if (!apiKey.trim()) return;
+    if (!normalizedKey) return;
     setLoading(true);
     try {
-      await validateAndEnter(apiKey.trim());
+      await validateAndEnter(normalizedKey);
       if (remember) {
-        await saveKey(apiKey.trim(), passphrase || undefined);
+        await saveKey(normalizedKey, passphrase || undefined);
         await refreshVaultState();
       }
     } catch { /* toast shown */ }
@@ -115,16 +123,26 @@ export default function Connect() {
               <div className="space-y-1.5">
                 <Label htmlFor="ak" className="flex items-center gap-1.5"><KeyRound className="size-3.5" />Neon API key</Label>
                 <div className="relative">
-                  <Input id="ak" type={show ? "text" : "password"} placeholder="neon_…" autoComplete="off"
+                  <Input id="ak" type={show ? "text" : "password"} placeholder="napi_…" autoComplete="off"
                     value={apiKey} onChange={e => setKey(e.target.value)} className="pr-10 mono" />
                   <button type="button" onClick={() => setShow(s => !s)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Toggle visibility">
                     {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                   </button>
                 </div>
-                <div className="text-[11px] text-muted-foreground">
-                  Create one in the Neon Console under <span className="mono">Account → API keys</span>.
+                <div className="text-[11px] text-muted-foreground break-words">
+                  Generate one from your Neon profile: open <span className="mono">Account settings → API keys</span>, then create and copy an API key. Neon API keys usually start with <span className="mono">napi_</span>.
                 </div>
+                {looksLikeLegacyPrefix && (
+                  <div className="text-[11px] text-warning break-words">
+                    This looks like a database or legacy token prefix. Neon API access expects a Console API key, typically starting with <span className="mono">napi_</span>.
+                  </div>
+                )}
+                {normalizedKey && !looksLikeApiKey && !looksLikeLegacyPrefix && (
+                  <div className="text-[11px] text-muted-foreground break-words">
+                    The app will still try this token, but double-check that it is a Neon Console API key rather than a connection string or password.
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between rounded-md hairline p-3">
@@ -142,7 +160,7 @@ export default function Connect() {
                 </div>
               )}
 
-              <Button onClick={onConnect} disabled={loading || !apiKey.trim()} className="w-full">
+              <Button onClick={onConnect} disabled={loading || !normalizedKey} className="w-full">
                 {loading ? <Loader2 className="size-4 animate-spin" /> : "Connect"}
               </Button>
 

@@ -9,12 +9,12 @@ import { Lock, LogOut, Trash2 } from "lucide-react";
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3 border-b border-border last:border-b-0">
-      <div className="min-w-0">
+    <div className="flex items-center justify-between gap-4 py-3 border-b border-border last:border-b-0 min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">{title}</div>
         {desc && <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="min-w-0 max-w-[60%] shrink-0 text-right">{children}</div>
     </div>
   );
 }
@@ -86,10 +86,10 @@ export default function Settings() {
       <div className="hairline rounded-lg p-4 bg-card mt-4">
         <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Diagnostics</div>
         <Row title="Last API status">
-          <span className="text-sm mono">{diagnostics[0] ? `${diagnostics[0].status} · ${diagnostics[0].route}` : "—"}</span>
+          <span className="block text-sm mono break-words">{diagnostics[0] ? `${diagnostics[0].status} · ${diagnostics[0].route}` : "—"}</span>
         </Row>
         <Row title="Last failed route">
-          <span className="text-sm mono truncate max-w-[60vw]">{lastFailed ? `${lastFailed.status} · ${lastFailed.route}` : "—"}</span>
+          <span className="block text-sm mono break-words">{lastFailed ? `${lastFailed.status} · ${lastFailed.route}` : "—"}</span>
         </Row>
         <Row title="CORS hint" desc="Status 0 typically indicates a CORS or network failure.">
           <Button variant="outline" size="sm" onClick={() => updateSettings({ apiMode: "proxy" })}>Switch to proxy</Button>
@@ -100,8 +100,8 @@ export default function Settings() {
         <div className="mt-2 max-h-56 overflow-auto hairline rounded-md text-[11px] mono">
           {diagnostics.length === 0 ? <div className="p-3 text-muted-foreground">No requests yet.</div> :
             diagnostics.map((d, i) => (
-              <div key={i} className={`px-2 py-1 border-b last:border-b-0 border-border flex gap-2 ${d.ok ? "" : "text-destructive"}`}>
-                <span className="w-12">{d.status}</span><span className="w-12">{d.ms}ms</span><span className="truncate">{d.route}</span>
+              <div key={i} className={`px-2 py-1 border-b last:border-b-0 border-border flex gap-2 min-w-0 ${d.ok ? "" : "text-destructive"}`}>
+                <span className="w-12 shrink-0">{d.status}</span><span className="w-12 shrink-0">{d.ms}ms</span><span className="min-w-0 break-words">{d.route}</span>
               </div>
             ))
           }
