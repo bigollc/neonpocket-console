@@ -60,9 +60,9 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
-  const base = await crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]);
+  const base = await crypto.subtle.importKey("raw", enc.encode(passphrase) as BufferSource, "PBKDF2", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: 250_000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: salt as BufferSource, iterations: 250_000, hash: "SHA-256" },
     base,
     { name: "AES-GCM", length: 256 },
     false,
@@ -95,7 +95,7 @@ export async function saveKey(apiKey: string, passphrase?: string): Promise<void
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const usesPassphrase = !!passphrase;
   const key = usesPassphrase ? await deriveKey(passphrase!, salt) : await deviceKey(salt);
-  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(apiKey));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv as BufferSource }, key, enc.encode(apiKey) as BufferSource);
   await idbPut({ id: KEY_ID, iv, salt, ciphertext, usesPassphrase, createdAt: new Date().toISOString() } as VaultRecord);
 }
 
@@ -106,7 +106,7 @@ export async function unlockKey(passphrase?: string): Promise<string> {
     ? (passphrase ? await deriveKey(passphrase, rec.salt) : (() => { throw new Error("Passphrase required"); })())
     : await deviceKey(rec.salt);
   try {
-    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: rec.iv }, key, rec.ciphertext);
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: rec.iv as BufferSource }, key, rec.ciphertext);
     return dec.decode(pt);
   } catch {
     throw new Error(rec.usesPassphrase ? "Wrong passphrase" : "Vault could not be decrypted on this device");

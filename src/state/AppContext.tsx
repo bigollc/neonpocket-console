@@ -87,7 +87,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [selectedProjectId, selectedBranchId, selectedDatabase]);
 
   // Diagnostics ring buffer
-  useEffect(() => onDiagnostic(e => setDiagnostics(d => [e, ...d].slice(0, 100))), []);
+  useEffect(() => { const off = onDiagnostic(e => setDiagnostics(d => [e, ...d].slice(0, 100))); return () => { off(); }; }, []);
 
   // Vault presence
   const refreshVaultState = useCallback(async () => { setHasStoredVault(await hasVault()); }, []);
