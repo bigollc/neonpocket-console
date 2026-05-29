@@ -12,7 +12,7 @@ bun run lint
 bun run test
 ```
 
-Open the app, paste your Neon API key (generate one from the Neon Console profile menu under **Account settings → API keys**), choose a workspace/organization, then select one of its projects.
+Open the app, paste your Neon Console API key (generate one from the Neon Console profile menu under **Account settings → API keys**; current keys typically start with `napi_`), choose a workspace/organization, then select one of its projects.
 
 ## Architecture
 
