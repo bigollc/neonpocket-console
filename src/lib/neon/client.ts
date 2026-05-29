@@ -91,17 +91,33 @@ export async function callNeon<T = any>(path: string, opts: CallOptions): Promis
 
   const ms = Math.round(performance.now() - started);
   const requestId = res.headers.get("neon-request-id") || res.headers.get("x-request-id") || undefined;
-  let parsed: any = undefined;
-  const text = await res.text();
-  if (text) {
-    try { parsed = JSON.parse(text); } catch { parsed = text; }
-  }
+  const contentType = res.headers.get("content-type") || "";
+  const isJsonResponse = /\bapplication\/json\b/i.test(contentType) || /\+json\b/i.test(contentType);
 
   if (!res.ok) {
+    let parsed: any = undefined;
+    const text = await res.text();
+    if (text) {
+      try { parsed = JSON.parse(text); } catch { parsed = text; }
+    }
     const err = normalizeError({ status: res.status, route, body: parsed, requestId });
     emit({ ts: err.timestamp, route, method, status: res.status, ms, ok: false, requestId, errorMessage: err.message });
     throw err;
   }
+
+  if (!isJsonResponse) {
+    const err = normalizeError({
+      status: 0,
+      route,
+      requestId,
+      message: "Neon proxy returned a non-JSON response; proxy is likely misconfigured (common with Lovable/static deploys serving the app shell instead of the Neon proxy route)",
+    });
+    emit({ ts: err.timestamp, route, method, status: res.status, ms, ok: false, requestId, errorMessage: err.message });
+    throw err;
+  }
+
+  const text = await res.text();
+  const parsed = text ? JSON.parse(text) : undefined;
   emit({ ts: new Date().toISOString(), route, method, status: res.status, ms, ok: true, requestId });
   return parsed as T;
 }

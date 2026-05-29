@@ -11,7 +11,23 @@ import { Logo } from "@/components/Logo";
 import { useApp } from "@/state/AppContext";
 import { NeonService } from "@/lib/neon/service";
 import { hasVault, vaultUsesPassphrase, saveKey, unlockKey, forgetKey } from "@/lib/vault";
-import { isNormalizedError } from "@/lib/errors";
+import { isNormalizedError, normalizeError } from "@/lib/errors";
+
+function hasUserPayload(value: unknown): value is { user: unknown } {
+  return !!value && typeof value === "object" && "user" in value && !!(value as { user?: unknown }).user;
+}
+
+function hasProjectsPayload(value: unknown): value is { projects: unknown[] } {
+  return !!value && typeof value === "object" && Array.isArray((value as { projects?: unknown }).projects);
+}
+
+function unexpectedProxyShapeError(route: string) {
+  return normalizeError({
+    status: 0,
+    route,
+    message: "Neon proxy returned an unexpected response shape; proxy route may be misconfigured (especially on Lovable/static deploys serving the app shell instead of /api/neon-proxy)",
+  });
+}
 
 export default function Connect() {
   const { setApiKey, settings, refreshVaultState } = useApp();
@@ -39,9 +55,11 @@ export default function Connect() {
   async function validateAndEnter(k: string) {
     try {
       try {
-        await NeonService.getCurrentUser({ apiKey: k, mode: settings.apiMode });
+        const currentUser = await NeonService.getCurrentUser({ apiKey: k, mode: settings.apiMode });
+        if (!hasUserPayload(currentUser)) throw unexpectedProxyShapeError("GET /users/me");
       } catch {
-        await NeonService.listProjects({ apiKey: k, mode: settings.apiMode });
+        const projectList = await NeonService.listProjects({ apiKey: k, mode: settings.apiMode });
+        if (!hasProjectsPayload(projectList)) throw unexpectedProxyShapeError("GET /projects");
       }
       setApiKey(k);
       toast.success("Connected to Neon");
