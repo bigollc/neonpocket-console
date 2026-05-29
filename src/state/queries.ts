@@ -1,5 +1,6 @@
 import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { NeonService } from "@/lib/neon/service";
+import type { ApiMode } from "@/lib/neon/client";
 import { useApp } from "@/state/AppContext";
 import type { NormalizedError } from "@/lib/errors";
 import type { NeonOrganization, NeonUser } from "@/lib/neon/types";
@@ -12,7 +13,7 @@ export interface WorkspaceOption extends NeonOrganization {
   isDefault?: boolean;
 }
 
-function ctxOf(apiKey: string | null, mode: "direct" | "proxy") {
+function ctxOf(apiKey: string | null, mode: ApiMode) {
   if (!apiKey) throw new Error("No API key");
   return { apiKey, mode };
 }

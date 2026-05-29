@@ -50,11 +50,8 @@ export default function Settings() {
 
       <div className="hairline rounded-lg p-4 bg-card mt-4">
         <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">API</div>
-        <Row title="API mode" desc="Direct calls from your browser, or forward via the stateless proxy.">
-          <Select value={settings.apiMode} onValueChange={(v: any) => updateSettings({ apiMode: v })}>
-            <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="direct">Direct (browser)</SelectItem><SelectItem value="proxy">Fallback proxy</SelectItem></SelectContent>
-          </Select>
+        <Row title="API connection" desc="NeonPocket calls Neon's public API directly from your browser. No app proxy is used.">
+          <span className="text-sm mono text-muted-foreground">direct</span>
         </Row>
         <Row title="Local history (SQL editor)" desc="Save scratch SQL on this device only.">
           <Switch checked={settings.localHistory} onCheckedChange={v => updateSettings({ localHistory: v })} />
@@ -91,8 +88,8 @@ export default function Settings() {
         <Row title="Last failed route">
           <span className="block text-sm mono break-words">{lastFailed ? `${lastFailed.status} · ${lastFailed.route}` : "—"}</span>
         </Row>
-        <Row title="CORS hint" desc="Status 0 typically indicates a CORS or network failure.">
-          <Button variant="outline" size="sm" onClick={() => updateSettings({ apiMode: "proxy" })}>Switch to proxy</Button>
+        <Row title="Network hint" desc="Status 0 typically indicates a browser network/CORS failure while calling Neon's public API directly.">
+          <span className="text-xs text-muted-foreground">Direct-only</span>
         </Row>
         <Row title="Recent requests">
           <Button variant="ghost" size="sm" onClick={clearDiagnostics}>Clear log</Button>

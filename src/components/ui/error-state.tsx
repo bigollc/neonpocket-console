@@ -24,7 +24,7 @@ export function ErrorState({ error, onRetry, title }: { error: NormalizedError |
           </div>
           {status === 0 && (
             <div className="text-xs text-muted-foreground mt-2">
-              This is typically a CORS or network failure. Try switching API mode to “Fallback proxy” in Settings.
+              This is typically a browser network/CORS failure while calling Neon's public API directly.
             </div>
           )}
           {onRetry && (
