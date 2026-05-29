@@ -1,6 +1,8 @@
 const DEFAULT_NEON_BASE = "https://console.neon.tech/api/v2";
 
 interface Env {
+  /** Static Vite app assets generated into ./dist and bound by wrangler.jsonc. */
+  ASSETS: Fetcher;
   /** Comma-separated browser origins allowed to call this Worker. Use exact origins, or * only during testing. */
   ALLOWED_ORIGINS?: string;
   /** Optional override for testing. Production should normally keep the default Neon Console API base. */
@@ -14,6 +16,8 @@ interface ForwardBody {
   body?: unknown;
 }
 
+const PROXY_PATH = "/api/neon-proxy";
+
 const json = (body: unknown, status: number, headers: HeadersInit = {}) =>
   new Response(JSON.stringify(body), {
     status,
@@ -25,13 +29,15 @@ const json = (body: unknown, status: number, headers: HeadersInit = {}) =>
 
 function allowedOrigin(request: Request, env: Env) {
   const origin = request.headers.get("Origin") || "";
-  const configured = (env.ALLOWED_ORIGINS || "")
+  const requestOrigin = new URL(request.url).origin;
+  const configured = (env.ALLOWED_ORIGINS || requestOrigin)
     .split(",")
     .map(item => item.trim())
     .filter(Boolean);
 
   if (configured.includes("*")) return "*";
   if (origin && configured.includes(origin)) return origin;
+  if (!origin && configured.includes(requestOrigin)) return requestOrigin;
   return null;
 }
 
@@ -53,83 +59,92 @@ function safeBase(env: Env) {
   return value || DEFAULT_NEON_BASE;
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const cors = corsHeaders(request, env);
+async function handleNeonProxy(request: Request, env: Env) {
+  const cors = corsHeaders(request, env);
 
-    if (request.method === "OPTIONS") {
-      return cors
-        ? new Response(null, { status: 204, headers: cors })
-        : json({ error: "Origin is not allowed" }, 403);
-    }
+  if (request.method === "OPTIONS") {
+    return cors
+      ? new Response(null, { status: 204, headers: cors })
+      : json({ error: "Origin is not allowed" }, 403);
+  }
 
-    if (!cors) {
-      return json({ error: "Origin is not allowed" }, 403);
-    }
+  if (!cors) {
+    return json({ error: "Origin is not allowed" }, 403);
+  }
 
-    if (request.method !== "POST") {
-      return json({ error: "Only POST is supported" }, 405, cors);
-    }
+  if (request.method !== "POST") {
+    return json({ error: "Only POST is supported" }, 405, cors);
+  }
 
-    const auth = request.headers.get("Authorization");
-    if (!auth || !/^Bearer\s+\S+/i.test(auth)) {
-      return json({ error: "Missing Authorization: Bearer <NEON_API_KEY>" }, 401, cors);
-    }
+  const auth = request.headers.get("Authorization");
+  if (!auth || !/^Bearer\s+\S+/i.test(auth)) {
+    return json({ error: "Missing Authorization: Bearer <NEON_API_KEY>" }, 401, cors);
+  }
 
-    let payload: ForwardBody;
-    try {
-      payload = await request.json();
-    } catch {
-      return json({ error: "Invalid JSON body" }, 400, cors);
-    }
+  let payload: ForwardBody;
+  try {
+    payload = await request.json();
+  } catch {
+    return json({ error: "Invalid JSON body" }, 400, cors);
+  }
 
-    const method = (payload.method || "GET").toUpperCase();
-    if (!["GET", "POST", "PATCH", "PUT", "DELETE"].includes(method)) {
-      return json({ error: "Unsupported method" }, 405, cors);
-    }
+  const method = (payload.method || "GET").toUpperCase();
+  if (!["GET", "POST", "PATCH", "PUT", "DELETE"].includes(method)) {
+    return json({ error: "Unsupported method" }, 405, cors);
+  }
 
-    const path = String(payload.path || "");
-    if (!path.startsWith("/")) {
-      return json({ error: "Path must start with /" }, 400, cors);
-    }
+  const path = String(payload.path || "");
+  if (!path.startsWith("/")) {
+    return json({ error: "Path must start with /" }, 400, cors);
+  }
 
-    if (path.includes("..") || path.includes("://")) {
-      return json({ error: "Disallowed path" }, 400, cors);
-    }
+  if (path.includes("..") || path.includes("://")) {
+    return json({ error: "Disallowed path" }, 400, cors);
+  }
 
-    const upstreamUrl = new URL(`${safeBase(env)}${path}`);
-    if (payload.query) {
-      for (const [key, value] of Object.entries(payload.query)) {
-        if (value !== undefined && value !== null && value !== "") {
-          upstreamUrl.searchParams.append(key, String(value));
-        }
+  const upstreamUrl = new URL(`${safeBase(env)}${path}`);
+  if (payload.query) {
+    for (const [key, value] of Object.entries(payload.query)) {
+      if (value !== undefined && value !== null && value !== "") {
+        upstreamUrl.searchParams.append(key, String(value));
       }
     }
+  }
 
-    let upstream: Response;
-    try {
-      upstream = await fetch(upstreamUrl.toString(), {
-        method,
-        headers: {
-          "Accept": "application/json",
-          "Authorization": auth,
-          ...(payload.body !== undefined ? { "Content-Type": "application/json" } : {}),
-        },
-        body: payload.body !== undefined ? JSON.stringify(payload.body) : undefined,
-      });
-    } catch (error: any) {
-      return json({ error: error?.message || "Neon upstream request failed" }, 502, cors);
+  let upstream: Response;
+  try {
+    upstream = await fetch(upstreamUrl.toString(), {
+      method,
+      headers: {
+        "Accept": "application/json",
+        "Authorization": auth,
+        ...(payload.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      body: payload.body !== undefined ? JSON.stringify(payload.body) : undefined,
+    });
+  } catch (error: any) {
+    return json({ error: error?.message || "Neon upstream request failed" }, 502, cors);
+  }
+
+  const responseHeaders = new Headers(cors);
+  responseHeaders.set("Content-Type", upstream.headers.get("Content-Type") || "application/json");
+
+  const neonRequestId = upstream.headers.get("neon-request-id") || upstream.headers.get("x-request-id");
+  if (neonRequestId) responseHeaders.set("neon-request-id", neonRequestId);
+
+  return new Response(await upstream.text(), {
+    status: upstream.status,
+    headers: responseHeaders,
+  });
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === PROXY_PATH) {
+      return handleNeonProxy(request, env);
     }
 
-    const responseHeaders = new Headers(cors);
-    responseHeaders.set("Content-Type", upstream.headers.get("Content-Type") || "application/json");
-
-    const neonRequestId = upstream.headers.get("neon-request-id") || upstream.headers.get("x-request-id");
-    if (neonRequestId) responseHeaders.set("neon-request-id", neonRequestId);
-
-    return new Response(await upstream.text(), {
-      status: upstream.status,
-      headers: responseHeaders,
-    });
+    return env.ASSETS.fetch(request);
   },
 };
