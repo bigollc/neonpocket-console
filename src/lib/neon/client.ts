@@ -1,8 +1,11 @@
 import { isNormalizedError, normalizeError, type NormalizedError } from "@/lib/errors";
 
 export const NEON_BASE = "https://console.neon.tech/api/v2";
+const CONFIGURED_NEON_PROXY_URL = import.meta.env.VITE_NEON_PROXY_URL?.trim() || "";
+export const NEON_PROXY_URL = CONFIGURED_NEON_PROXY_URL || "/api/neon-proxy";
+const HAS_CONFIGURED_PROXY = !!CONFIGURED_NEON_PROXY_URL;
 
-export type ApiMode = "direct";
+export type ApiMode = "auto" | "direct" | "proxy";
 
 export interface CallOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE" | "PUT";
@@ -24,6 +27,7 @@ export interface DiagnosticEntry {
   errorMessage?: string;
 }
 
+type Transport = "direct" | "proxy";
 type DiagListener = (e: DiagnosticEntry) => void;
 const listeners = new Set<DiagListener>();
 export function onDiagnostic(l: DiagListener) { listeners.add(l); return () => listeners.delete(l); }
@@ -41,64 +45,127 @@ function isJsonContentType(contentType: string) {
   return /\bapplication\/json\b/i.test(contentType) || /\+json\b/i.test(contentType);
 }
 
+function statusZeroMessage(error: unknown) {
+  return isNormalizedError(error) ? error.message : (error as any)?.message || "Network error";
+}
+
+function isStatusZero(error: unknown) {
+  return isNormalizedError(error) && error.status === 0;
+}
+
+function isBrowserBlockedMessage(message: string) {
+  return /load failed|failed to fetch|networkerror|cors/i.test(message);
+}
+
 export async function callNeon<T = any>(path: string, opts: CallOptions): Promise<T> {
   const method = opts.method ?? "GET";
+  const mode = opts.mode ?? "auto";
   const qs = buildQuery(opts.query);
   const route = `${method} ${path}${qs}`;
   const started = performance.now();
 
-  const url = `${NEON_BASE}${path}${qs}`;
+  const directUrl = `${NEON_BASE}${path}${qs}`;
   const headers: Record<string, string> = {
     "Accept": "application/json",
     "Authorization": `Bearer ${opts.apiKey}`,
   };
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
 
-  let res: Response;
+  const parseResponse = async (res: Response, transport: Transport) => {
+    const ms = Math.round(performance.now() - started);
+    const requestId = res.headers.get("neon-request-id") || res.headers.get("x-request-id") || undefined;
+    const contentType = res.headers.get("content-type") || "";
+    const text = await res.text();
+    let parsed: any = undefined;
+
+    if (text) {
+      try { parsed = JSON.parse(text); } catch { parsed = text; }
+    }
+
+    if (!res.ok) {
+      const err = normalizeError({ status: res.status, route, body: parsed, requestId });
+      emit({ ts: err.timestamp, route: `${route} (${transport})`, method, status: res.status, ms, ok: false, requestId, errorMessage: err.message });
+      throw err;
+    }
+
+    if (text && !isJsonContentType(contentType)) {
+      const message = transport === "proxy"
+        ? "Neon proxy returned a non-JSON response; the proxy endpoint is probably serving the app shell instead of forwarding to Neon"
+        : "Neon API returned a non-JSON response";
+      const err = normalizeError({ status: 0, route, requestId, message });
+      emit({ ts: err.timestamp, route: `${route} (${transport})`, method, status: res.status, ms, ok: false, requestId, errorMessage: err.message });
+      throw err;
+    }
+
+    emit({ ts: new Date().toISOString(), route: `${route} (${transport})`, method, status: res.status, ms, ok: true, requestId });
+    return parsed as T;
+  };
+
+  const requestDirect = async () => {
+    try {
+      const res = await fetch(directUrl, {
+        method,
+        headers,
+        signal: opts.signal,
+        body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      });
+      return parseResponse(res, "direct");
+    } catch (e: any) {
+      if (isAbort(e) || isNormalizedError(e)) throw e;
+      const rawMessage = e?.message || "Could not reach Neon API directly";
+      const message = isBrowserBlockedMessage(rawMessage)
+        ? `Browser blocked the direct Neon API request (${rawMessage}). This usually means the browser could not complete the CORS/preflight request for ${NEON_BASE}.`
+        : rawMessage;
+      const err = normalizeError({ status: 0, route, message });
+      emit({ ts: err.timestamp, route: `${route} (direct)`, method, status: 0, ms: Math.round(performance.now() - started), ok: false, errorMessage: err.message });
+      throw err;
+    }
+  };
+
+  const requestProxy = async () => {
+    try {
+      const res = await fetch(NEON_PROXY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${opts.apiKey}` },
+        signal: opts.signal,
+        body: JSON.stringify({ method, path, query: opts.query, body: opts.body }),
+      });
+      return parseResponse(res, "proxy");
+    } catch (e: any) {
+      if (isAbort(e) || isNormalizedError(e)) throw e;
+      const err = normalizeError({ status: 0, route, message: e?.message || "Could not reach Neon proxy" });
+      emit({ ts: err.timestamp, route: `${route} (proxy)`, method, status: 0, ms: Math.round(performance.now() - started), ok: false, errorMessage: err.message });
+      throw err;
+    }
+  };
+
+  if (mode === "direct") return requestDirect();
+  if (mode === "proxy") return requestProxy();
+
   try {
-    res = await fetch(url, {
-      method,
-      headers,
-      signal: opts.signal,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    });
-  } catch (e: any) {
-    if (isAbort(e)) throw e;
-    if (isNormalizedError(e)) throw e;
-    const rawMessage = e?.message || "Could not reach Neon API directly";
-    const browserBlocked = /load failed|failed to fetch|networkerror|cors/i.test(rawMessage);
-    const message = browserBlocked
-      ? `Browser blocked the direct Neon API request (${rawMessage}). This usually means the browser could not complete the CORS/preflight request for https://console.neon.tech/api/v2.`
-      : rawMessage;
-    const err = normalizeError({ status: 0, route, message });
-    emit({ ts: err.timestamp, route, method, status: 0, ms: Math.round(performance.now() - started), ok: false, errorMessage: err.message });
-    throw err;
+    return await requestDirect();
+  } catch (directError: any) {
+    if (isAbort(directError)) throw directError;
+    if (!isStatusZero(directError)) throw directError;
+
+    try {
+      return await requestProxy();
+    } catch (proxyError: any) {
+      if (isAbort(proxyError)) throw proxyError;
+      if (!isStatusZero(proxyError)) throw proxyError;
+
+      const proxyHint = HAS_CONFIGURED_PROXY
+        ? `Configured proxy also failed: ${statusZeroMessage(proxyError)}`
+        : `No working proxy is configured at ${NEON_PROXY_URL}. Static Lovable hosts do not execute this route; set VITE_NEON_PROXY_URL to a deployed serverless proxy endpoint.`;
+      const err = normalizeError({
+        status: 0,
+        route,
+        message: `${statusZeroMessage(directError)} ${proxyHint}`,
+      });
+      emit({ ts: err.timestamp, route: `${route} (auto)`, method, status: 0, ms: Math.round(performance.now() - started), ok: false, errorMessage: err.message });
+      throw err;
+    }
   }
-
-  const ms = Math.round(performance.now() - started);
-  const requestId = res.headers.get("neon-request-id") || res.headers.get("x-request-id") || undefined;
-  const contentType = res.headers.get("content-type") || "";
-  const text = await res.text();
-  let parsed: any = undefined;
-
-  if (text) {
-    try { parsed = JSON.parse(text); } catch { parsed = text; }
-  }
-
-  if (!res.ok) {
-    const err = normalizeError({ status: res.status, route, body: parsed, requestId });
-    emit({ ts: err.timestamp, route, method, status: res.status, ms, ok: false, requestId, errorMessage: err.message });
-    throw err;
-  }
-
-  if (text && !isJsonContentType(contentType)) {
-    const err = normalizeError({ status: 0, route, requestId, message: "Neon API returned a non-JSON response" });
-    emit({ ts: err.timestamp, route, method, status: res.status, ms, ok: false, requestId, errorMessage: err.message });
-    throw err;
-  }
-
-  emit({ ts: new Date().toISOString(), route, method, status: res.status, ms, ok: true, requestId });
-  return parsed as T;
 }
 
 export function isAbort(e: unknown) {

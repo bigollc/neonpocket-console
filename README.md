@@ -16,7 +16,7 @@ Open the app, paste your Neon Console API key (generate one from the Neon Consol
 
 ## Architecture
 
-- **Typed Neon API client** (`src/lib/neon/`) that calls `https://console.neon.tech/api/v2/*` directly from the browser. The app does not send API keys through an application proxy.
+- **Typed Neon API client** (`src/lib/neon/`) with Auto transport: direct browser calls to `https://console.neon.tech/api/v2/*` first, then a stateless proxy fallback only when the browser blocks direct CORS/preflight.
 - **Encrypted local vault** (`src/lib/vault.ts`): IndexedDB + Web Crypto AES-GCM. Optional PBKDF2 passphrase. Forget-key and clear-cache controls in Settings.
 - **Organization-first workspace flow**: the account shell loads the current user and organization list, requires a workspace before project tools appear, and fetches projects with `org_id` when an organization is selected.
 - **TanStack Query** for all remote data, with AbortController and operation polling (running operations are polled, finished/failed stop).
@@ -35,11 +35,17 @@ Capabilities differ by account, plan, organization role, beta access, and API ve
 - Browsing rows requires a **valid JWT** with a `sub` claim used by your RLS policies (`auth.jwt() ->> 'sub'`).
 - **RLS is always enforced.** NeonPocket never bypasses it.
 
-## Direct Neon API access
+## Neon API transport
 
-NeonPocket calls Neon's public Console API directly from the browser. There is no application proxy in the request path, so the Neon API key is only attached to requests sent to `https://console.neon.tech/api/v2/*`.
+NeonPocket defaults to **Auto** transport. Auto first tries Neon's public Console API directly from the browser. Safari/mobile browsers can return status `0` / `Load failed` when direct CORS/preflight is blocked; in that case Auto falls back to the stateless proxy endpoint.
 
-On Lovable/static deployments, no backend route is required for Neon API access. If a browser reports status `0`, inspect the browser network panel for a direct request to `https://console.neon.tech/api/v2/...`; it usually indicates a local browser/network/CORS block rather than a missing project proxy route.
+Local `bun run dev` serves `/api/neon-proxy` through Vite middleware. Production/static hosts such as Lovable do not execute `/api/neon-proxy` unless a backend/serverless route is deployed, so set a public environment variable that points to your deployed proxy endpoint:
+
+```env
+VITE_NEON_PROXY_URL=https://<your-serverless-host>/api/neon-proxy
+```
+
+The proxy forwards only the current request to Neon's API, rejects non-relative paths, and does not store keys, request bodies, or responses.
 
 ## Security
 
