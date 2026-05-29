@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Page, PageHeader } from "@/layout/PageHeader";
 import { useApp } from "@/state/AppContext";
@@ -30,7 +31,17 @@ export default function Dashboard() {
   const endpoints = useEndpointsQuery(selectedProjectId);
   const operations = useOperationsQuery(selectedProjectId);
 
+  useEffect(() => {
+    if (!selectedOrganizationId && !orgs.isLoading && (orgs.data?.unavailable || orgs.data?.organizations?.length === 0)) {
+      setSelectedOrganizationId(DEFAULT_WORKSPACE_ID);
+    }
+  }, [orgs.data, orgs.isLoading, selectedOrganizationId, setSelectedOrganizationId]);
+
   const proj = projects.data?.projects?.find((p: any) => p.id === selectedProjectId);
+
+  if (!selectedOrganizationId && (orgs.data?.unavailable || orgs.data?.organizations?.length === 0)) {
+    return <Page><Skeleton className="h-32 w-full" /></Page>;
+  }
 
   if (!selectedOrganizationId) {
     return (
