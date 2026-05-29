@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, GitBranch, Plug, Shield, Settings, Activity, TerminalSquare,
-  Table2, Database, EyeOff, Cable, MessageSquare, ListTree, Building2,
+  Table2, Database, EyeOff, Cable, MessageSquare, ListTree, Building2, Bug,
 } from "lucide-react";
 
 export interface NavItem {
@@ -31,6 +31,7 @@ export const NAV: NavItem[] = [
   // BACKEND
   { to: "/backend/data-api", label: "Data API", icon: Cable, section: "backend", requires: "branch" },
   { to: "/backend/feedback", label: "Feedback", icon: MessageSquare, section: "backend" },
+  { to: "/backend/diagnostics", label: "Diagnostics", icon: Bug, section: "backend" },
 ];
 
 export const MOBILE_PRIMARY = ["/dashboard", "/organizations", "/branches", "/branch/sql", "/settings"];

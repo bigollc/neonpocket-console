@@ -43,13 +43,18 @@ const SETTINGS_KEY = "neonpocket.settings.v1";
 const SELECT_KEY = "neonpocket.select.v1";
 
 const defaultSettings: Settings = {
-  theme: "system", motion: "full", sounds: false, apiMode: "proxy", localHistory: false,
+  theme: "system", motion: "full", sounds: false, apiMode: "direct", localHistory: false,
 };
 
 const Ctx = createContext<AppState | null>(null);
 
 function loadSettings(): Settings {
-  try { return { ...defaultSettings, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")) }; } catch { return defaultSettings; }
+  try {
+    const loaded = { ...defaultSettings, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")) };
+    return { ...loaded, apiMode: "direct" };
+  } catch {
+    return defaultSettings;
+  }
 }
 function loadSelect() {
   try { return JSON.parse(localStorage.getItem(SELECT_KEY) || "{}"); } catch { return {}; }
@@ -92,7 +97,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [selectedOrganizationId, selectedProjectId, selectedBranchId, selectedDatabase]);
 
   // Diagnostics ring buffer
-  useEffect(() => { const off = onDiagnostic(e => setDiagnostics(d => [e, ...d].slice(0, 100))); return () => { off(); }; }, []);
+  useEffect(() => {
+    const push = (e: DiagnosticEntry) => setDiagnostics(d => [e, ...d].slice(0, 100));
+    const off = onDiagnostic(push);
+    const onError = (event: ErrorEvent) => push({
+      ts: new Date().toISOString(),
+      route: event.filename || "window error",
+      method: "EVENT",
+      status: 0,
+      ms: 0,
+      ok: false,
+      errorMessage: event.message,
+    });
+    const onUnhandled = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      push({
+        ts: new Date().toISOString(),
+        route: "unhandled promise rejection",
+        method: "EVENT",
+        status: 0,
+        ms: 0,
+        ok: false,
+        errorMessage: reason?.message || String(reason || "Unknown rejection"),
+      });
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandled);
+    return () => {
+      off();
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onUnhandled);
+    };
+  }, []);
 
   // Vault presence
   const refreshVaultState = useCallback(async () => { setHasStoredVault(await hasVault()); }, []);

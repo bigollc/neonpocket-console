@@ -19,6 +19,7 @@ import BackupRestore from "@/pages/BackupRestore";
 import Masking from "@/pages/Masking";
 import DataApi from "@/pages/DataApi";
 import Feedback from "@/pages/Feedback";
+import Diagnostics from "@/pages/Diagnostics";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -40,6 +41,7 @@ const App = () => (
         <AppProvider>
           <Routes>
             <Route path="/connect" element={<Connect />} />
+            <Route path="/diagnostics" element={<Diagnostics />} />
             <Route element={<Protected><Shell /></Protected>}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
@@ -56,6 +58,7 @@ const App = () => (
               <Route path="branch/masking" element={<Masking />} />
               <Route path="backend/data-api" element={<DataApi />} />
               <Route path="backend/feedback" element={<Feedback />} />
+              <Route path="backend/diagnostics" element={<Diagnostics />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

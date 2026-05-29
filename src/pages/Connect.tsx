@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Loader2, ShieldCheck, KeyRound, Lock, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,19 +13,26 @@ import { NeonService } from "@/lib/neon/service";
 import { hasVault, vaultUsesPassphrase, saveKey, unlockKey, forgetKey } from "@/lib/vault";
 import { isNormalizedError, normalizeError } from "@/lib/errors";
 
-function hasUserPayload(value: unknown): value is { user: unknown } {
-  return !!value && typeof value === "object" && "user" in value && !!(value as { user?: unknown }).user;
+function hasUserPayload(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object") return false;
+  const payload = "user" in value ? (value as { user?: unknown }).user : value;
+  return !!payload && typeof payload === "object" && (
+    "id" in payload ||
+    "email" in payload ||
+    "login" in payload ||
+    "auth_accounts" in payload
+  );
 }
 
 function hasProjectsPayload(value: unknown): value is { projects: unknown[] } {
   return !!value && typeof value === "object" && Array.isArray((value as { projects?: unknown }).projects);
 }
 
-function unexpectedProxyShapeError(route: string) {
+function unexpectedNeonShapeError(route: string) {
   return normalizeError({
     status: 0,
     route,
-    message: "Neon proxy returned an unexpected response shape; proxy route may be misconfigured (especially on Lovable/static deploys serving the app shell instead of /api/neon-proxy)",
+    message: "Neon API returned an unexpected response shape",
   });
 }
 
@@ -56,10 +63,11 @@ export default function Connect() {
     try {
       try {
         const currentUser = await NeonService.getCurrentUser({ apiKey: k, mode: settings.apiMode });
-        if (!hasUserPayload(currentUser)) throw unexpectedProxyShapeError("GET /users/me");
-      } catch {
+        if (!hasUserPayload(currentUser)) throw unexpectedNeonShapeError("GET /users/me");
+      } catch (userError: any) {
+        if (isNormalizedError(userError) && userError.status === 0) throw userError;
         const projectList = await NeonService.listProjects({ apiKey: k, mode: settings.apiMode });
-        if (!hasProjectsPayload(projectList)) throw unexpectedProxyShapeError("GET /projects");
+        if (!hasProjectsPayload(projectList)) throw unexpectedNeonShapeError("GET /projects");
       }
       setApiKey(k);
       toast.success("Connected to Neon");
@@ -91,7 +99,7 @@ export default function Connect() {
       const k = await unlockKey(storedUsesPass ? unlockPass : undefined);
       await validateAndEnter(k);
     } catch (e: any) {
-      toast.error(e?.message || "Failed to unlock vault");
+      if (!isNormalizedError(e)) toast.error(e?.message || "Failed to unlock vault");
     } finally { setLoading(false); }
   }
 
@@ -184,14 +192,15 @@ export default function Connect() {
 
               <div className="text-[11px] text-muted-foreground flex items-start gap-1.5">
                 <ShieldCheck className="size-3.5 mt-px shrink-0" />
-                <span>Your key stays on this device. In fallback proxy mode, only the current request is forwarded to Neon — never stored.</span>
+                <span>Your key stays on this device. Requests go directly from your browser to Neon's public API and are never sent through an app proxy.</span>
               </div>
             </div>
           )}
         </div>
 
-        <div className="mt-4 text-center text-[11px] text-muted-foreground">
+        <div className="mt-4 text-center text-[11px] text-muted-foreground flex items-center justify-center gap-3">
           <a href="https://neon.com/docs/reference/api-reference" target="_blank" rel="noreferrer" className="underline underline-offset-4 hover:text-foreground">Neon API docs</a>
+          <Link to="/diagnostics" className="underline underline-offset-4 hover:text-foreground">Diagnostics</Link>
         </div>
       </motion.div>
     </div>
