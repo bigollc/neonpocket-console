@@ -51,9 +51,10 @@ export default function Organizations() {
       <div className="grid md:grid-cols-3 gap-3">
         <div className="hairline rounded-lg bg-card p-4 md:col-span-1">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Signed in as</div>
-          <div className="mt-1 text-sm font-medium truncate">{user?.name || userEmail(user) || "Neon user"}</div>
+          <div className="mt-1 text-sm font-medium truncate">{user?.name || userEmail(user) || (currentUser.error ? "API key connected" : "Neon user")}</div>
           {userEmail(user) && <div className="mt-0.5 text-xs text-muted-foreground truncate">{userEmail(user)}</div>}
           {user?.id && <div className="mt-2 text-[11px] mono text-muted-foreground break-all">{user.id}</div>}
+          {currentUser.error && <div className="mt-2 text-[11px] text-muted-foreground break-words">User profile is not available for this API key, but project access can still work.</div>}
         </div>
         <div className="hairline rounded-lg bg-card p-4 md:col-span-2">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Selected workspace</div>
@@ -70,6 +71,12 @@ export default function Organizations() {
                 <div className="flex items-center gap-2 text-sm font-medium"><Building2 className="size-4" /> Default workspace <Badge variant="secondary">default</Badge></div>
                 <div className="mt-1 text-xs text-muted-foreground">Projects available without an explicit organization filter; useful for personal or organization-scoped API keys.</div>
               </button>
+              {orgs.data?.unavailable && (
+                <div className="rounded-md border border-border p-3">
+                  <div className="text-sm font-medium">Organization list unavailable</div>
+                  <div className="mt-1 text-xs text-muted-foreground break-words">This API key may be organization-scoped or project-scoped. Use the default workspace to load accessible projects.</div>
+                </div>
+              )}
               {(orgs.data?.organizations || []).map((org: any) => (
                 <button key={org.id} onClick={() => setSelectedOrganizationId(org.id)} className={`w-full rounded-md border p-3 text-left transition-colors ${selectedOrganizationId === org.id ? "border-primary bg-primary/5" : "border-border hover:bg-accent/40"}`}>
                   <div className="flex items-center gap-2 text-sm font-medium"><Building2 className="size-4" /> {org.name}</div>
@@ -105,8 +112,8 @@ export default function Organizations() {
               <div className="space-y-2">
                 {arr(members.data, ["members", "organization_members", "items"]).slice(0, 20).map((member: any, idx: number) => (
                   <div key={member.id || member.email || idx} className="rounded-md border border-border p-3">
-                    <div className="text-sm font-medium truncate">{member.email || member.user?.email || member.name || "Member"}</div>
-                    <div className="text-xs text-muted-foreground">{member.role || member.org_role || "member"}</div>
+                    <div className="text-sm font-medium truncate">{member.email || member.user?.email || member.member?.email || member.name || "Member"}</div>
+                    <div className="text-xs text-muted-foreground">{member.role || member.org_role || member.member?.role || "member"}</div>
                   </div>
                 ))}
                 {!arr(members.data, ["members", "organization_members", "items"]).length && <EmptyState icon={Users} title="No members returned" />}

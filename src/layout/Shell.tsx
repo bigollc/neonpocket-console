@@ -65,7 +65,7 @@ export function Shell() {
   const { settings, selectedOrganizationId, selectedProjectId, selectedBranchId } = useApp();
   const currentUser = useCurrentUserQuery();
   const user = normalizeUser(currentUser.data);
-  const displayName = user?.name || userEmail(user) || "Neon user";
+  const displayName = user?.name || userEmail(user) || (currentUser.error ? "API key connected" : "Neon user");
   const displayEmail = userEmail(user);
   const variants = settings.motion === "reduced"
     ? { initial: {}, animate: {}, exit: {} }

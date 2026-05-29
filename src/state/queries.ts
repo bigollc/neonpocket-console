@@ -45,15 +45,23 @@ export function useCurrentUserQuery() {
 
 export function useOrganizationsQuery() {
   const { apiKey, settings } = useApp();
-  return useQuery<{ organizations: WorkspaceOption[] }, NormalizedError>({
+  return useQuery<{ organizations: WorkspaceOption[]; unavailable?: NormalizedError }, NormalizedError>({
     queryKey: ["organizations", settings.apiMode],
     enabled: !!apiKey,
     queryFn: async ({ signal }) => {
-      const data = await NeonService.listOrganizations({ ...ctxOf(apiKey, settings.apiMode), signal });
-      const organizations = (data.organizations || [])
-        .map((org: any) => ({ ...org, id: workspaceId(org), name: workspaceName(org) }))
-        .filter((org: WorkspaceOption) => !!org.id);
-      return { organizations };
+      try {
+        const data = await NeonService.listOrganizations({ ...ctxOf(apiKey, settings.apiMode), signal });
+        const organizations = (data.organizations || [])
+          .map((org: any) => ({ ...org, id: workspaceId(org), name: workspaceName(org) }))
+          .filter((org: WorkspaceOption) => !!org.id);
+        return { organizations };
+      } catch (error: any) {
+        // Organization-scoped and project-scoped keys can authenticate and list
+        // projects while not being allowed to enumerate the user's orgs. Keep the
+        // workspace flow usable via the default, unfiltered projects workspace.
+        if ([0, 401, 403, 404].includes(error?.status)) return { organizations: [], unavailable: error };
+        throw error;
+      }
     },
     retry: (count, err) => !!err?.retryable && count < 2,
   });
@@ -65,7 +73,17 @@ export function useProjectsQuery() {
   return useQuery<{ projects: any[] }, NormalizedError>({
     queryKey: ["projects", selectedOrganizationId, settings.apiMode],
     enabled: !!apiKey && !!selectedOrganizationId,
-    queryFn: ({ signal }) => NeonService.listProjects({ ...ctxOf(apiKey, settings.apiMode), signal }, orgId),
+    queryFn: async ({ signal }) => {
+      const ctx = { ...ctxOf(apiKey, settings.apiMode), signal };
+      try {
+        return await NeonService.listProjects(ctx, orgId);
+      } catch (error: any) {
+        if (orgId && [0, 400, 401, 403, 404, 422].includes(error?.status)) {
+          return NeonService.listProjects(ctx, null);
+        }
+        throw error;
+      }
+    },
     retry: (count, err) => !!err?.retryable && count < 2,
   });
 }
