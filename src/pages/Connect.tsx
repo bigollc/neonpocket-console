@@ -35,7 +35,11 @@ export default function Connect() {
 
   async function validateAndEnter(k: string) {
     try {
-      await NeonService.listProjects({ apiKey: k, mode: settings.apiMode });
+      try {
+        await NeonService.getCurrentUser({ apiKey: k, mode: settings.apiMode });
+      } catch {
+        await NeonService.listProjects({ apiKey: k, mode: settings.apiMode });
+      }
       setApiKey(k);
       toast.success("Connected to Neon");
       navigate("/dashboard", { replace: true });

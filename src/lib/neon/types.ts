@@ -83,10 +83,23 @@ export interface NeonOperation {
 
 export interface NeonOrganization {
   id: string;
+  org_id?: string;
   name: string;
   handle?: string;
   plan?: string;
+  role?: string;
   created_at?: string;
+  [k: string]: any;
+}
+
+export interface NeonUser {
+  id?: string;
+  name?: string;
+  email?: string;
+  image?: string;
+  avatar_url?: string;
+  plan?: string;
+  auth_accounts?: Array<{ email?: string; provider?: string; [k: string]: any }>;
   [k: string]: any;
 }
 

@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Command as CommandIcon, Menu } from "lucide-react";
+import { Command as CommandIcon, Menu, UserCircle } from "lucide-react";
 import { useState } from "react";
 import { NAV, MOBILE_PRIMARY } from "@/layout/nav";
 import { Logo } from "@/components/Logo";
@@ -11,20 +11,31 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppContext";
+import { normalizeUser, useCurrentUserQuery, userEmail } from "@/state/queries";
 
 function Sections({ onNavigate }: { onNavigate?: () => void }) {
+  const { selectedOrganizationId, selectedProjectId, selectedBranchId } = useApp();
   const groups = [
+    { key: "account", title: "Account" },
     { key: "project", title: "Project" },
     { key: "branch", title: "Branch" },
     { key: "backend", title: "App Backend" },
   ] as const;
+  const visibleItems = NAV.filter(n => {
+    if (n.requires === "organization") return !!selectedOrganizationId;
+    if (n.requires === "project") return !!selectedOrganizationId && !!selectedProjectId;
+    if (n.requires === "branch") return !!selectedOrganizationId && !!selectedProjectId && !!selectedBranchId;
+    return true;
+  });
   return (
     <nav className="flex flex-col gap-5">
-      {groups.map(g => (
-        <div key={g.key}>
+      {groups.map(g => {
+        const items = visibleItems.filter(n => n.section === g.key);
+        if (!items.length) return null;
+        return <div key={g.key}>
           <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{g.title}</div>
           <div className="flex flex-col gap-0.5">
-            {NAV.filter(n => n.section === g.key).map(n => (
+            {visibleItems.filter(n => n.section === g.key).map(n => (
               <NavLink key={n.to} to={n.to} onClick={onNavigate}
                 className={({ isActive }) => cn(
                   "group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
@@ -41,8 +52,8 @@ function Sections({ onNavigate }: { onNavigate?: () => void }) {
               </NavLink>
             ))}
           </div>
-        </div>
-      ))}
+        </div>;
+      })}
     </nav>
   );
 }
@@ -51,7 +62,11 @@ export function Shell() {
   const location = useLocation();
   const [drawer, setDrawer] = useState(false);
   const navigate = useNavigate();
-  const { settings } = useApp();
+  const { settings, selectedOrganizationId, selectedProjectId, selectedBranchId } = useApp();
+  const currentUser = useCurrentUserQuery();
+  const user = normalizeUser(currentUser.data);
+  const displayName = user?.name || userEmail(user) || "Neon user";
+  const displayEmail = userEmail(user);
   const variants = settings.motion === "reduced"
     ? { initial: {}, animate: {}, exit: {} }
     : { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -6 } };
@@ -70,8 +85,15 @@ export function Shell() {
         <div className="p-3 overflow-y-auto flex-1">
           <Sections />
         </div>
-        <div className="p-3 border-t border-sidebar-border text-[11px] text-muted-foreground">
-          <kbd className="px-1.5 py-0.5 rounded border border-border bg-background mono">⌘K</kbd> command palette
+        <div className="p-3 border-t border-sidebar-border text-[11px] text-muted-foreground space-y-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <UserCircle className="size-7 shrink-0" />
+            <div className="min-w-0">
+              <div className="truncate text-sidebar-foreground text-xs font-medium">{displayName}</div>
+              {displayEmail && <div className="truncate">{displayEmail}</div>}
+            </div>
+          </div>
+          <div><kbd className="px-1.5 py-0.5 rounded border border-border bg-background mono">⌘K</kbd> command palette</div>
         </div>
       </aside>
 
@@ -115,6 +137,9 @@ export function Shell() {
           <div className="grid grid-cols-5">
             {MOBILE_PRIMARY.map(to => {
               const item = NAV.find(n => n.to === to)!;
+              if (item.requires === "organization" && !selectedOrganizationId) return null;
+              if (item.requires === "project" && (!selectedOrganizationId || !selectedProjectId)) return null;
+              if (item.requires === "branch" && (!selectedOrganizationId || !selectedProjectId || !selectedBranchId)) return null;
               const active = location.pathname.startsWith(to);
               return (
                 <button key={to} onClick={() => navigate(to)} className={cn(

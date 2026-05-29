@@ -8,7 +8,7 @@ import { Lock, LogOut, Moon, Sun } from "lucide-react";
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
-  const { signOut, settings, updateSettings, forgetStoredKey } = useApp();
+  const { signOut, settings, updateSettings, forgetStoredKey, selectedOrganizationId, selectedProjectId, selectedBranchId } = useApp();
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -20,6 +20,13 @@ export function CommandPalette() {
     return () => window.removeEventListener("keydown", h);
   }, []);
 
+  const visibleNav = NAV.filter(n => {
+    if (n.requires === "organization") return !!selectedOrganizationId;
+    if (n.requires === "project") return !!selectedOrganizationId && !!selectedProjectId;
+    if (n.requires === "branch") return !!selectedOrganizationId && !!selectedProjectId && !!selectedBranchId;
+    return true;
+  });
+
   const go = (to: string) => { setOpen(false); navigate(to); };
 
   return (
@@ -28,7 +35,7 @@ export function CommandPalette() {
       <CommandList>
         <CommandEmpty>No results.</CommandEmpty>
         <CommandGroup heading="Navigate">
-          {NAV.map(n => (
+          {visibleNav.map(n => (
             <CommandItem key={n.to} value={n.label} onSelect={() => go(n.to)}>
               <n.icon className="size-3.5 mr-2 opacity-70" />{n.label}
             </CommandItem>

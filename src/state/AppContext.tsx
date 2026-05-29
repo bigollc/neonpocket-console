@@ -22,6 +22,8 @@ interface AppState {
   refreshVaultState: () => Promise<void>;
   forgetStoredKey: () => Promise<void>;
 
+  selectedOrganizationId: string | null;
+  setSelectedOrganizationId: (id: string | null) => void;
   selectedProjectId: string | null;
   setSelectedProjectId: (id: string | null) => void;
   selectedBranchId: string | null;
@@ -63,12 +65,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [apiKey, setApiKeyState] = useState<string | null>(null);
   const [hasStoredVault, setHasStoredVault] = useState(false);
   const sel = loadSelect();
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(sel.projectId ?? null);
-  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(sel.branchId ?? null);
+  const [selectedOrganizationIdState, setSelectedOrganizationIdState] = useState<string | null>(sel.organizationId ?? null);
+  const [selectedProjectIdState, setSelectedProjectIdState] = useState<string | null>(sel.projectId ?? null);
+  const [selectedBranchIdState, setSelectedBranchIdState] = useState<string | null>(sel.branchId ?? null);
   const [selectedDatabase, setSelectedDatabase] = useState<string | null>(sel.database ?? null);
   const [settings, setSettings] = useState<Settings>(loadSettings());
   const [diagnostics, setDiagnostics] = useState<DiagnosticEntry[]>([]);
-
+  const selectedOrganizationId = selectedOrganizationIdState;
+  const selectedProjectId = selectedProjectIdState;
+  const selectedBranchId = selectedBranchIdState;
   // Theme
   useEffect(() => {
     applyTheme(settings.theme);
@@ -83,8 +88,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Persist settings & selection
   useEffect(() => { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }, [settings]);
   useEffect(() => {
-    localStorage.setItem(SELECT_KEY, JSON.stringify({ projectId: selectedProjectId, branchId: selectedBranchId, database: selectedDatabase }));
-  }, [selectedProjectId, selectedBranchId, selectedDatabase]);
+    localStorage.setItem(SELECT_KEY, JSON.stringify({ organizationId: selectedOrganizationId, projectId: selectedProjectId, branchId: selectedBranchId, database: selectedDatabase }));
+  }, [selectedOrganizationId, selectedProjectId, selectedBranchId, selectedDatabase]);
 
   // Diagnostics ring buffer
   useEffect(() => { const off = onDiagnostic(e => setDiagnostics(d => [e, ...d].slice(0, 100))); return () => { off(); }; }, []);
@@ -93,10 +98,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refreshVaultState = useCallback(async () => { setHasStoredVault(await hasVault()); }, []);
   useEffect(() => { refreshVaultState(); }, [refreshVaultState]);
 
+  const setSelectedOrganizationId = useCallback((id: string | null) => {
+    setSelectedOrganizationIdState(id);
+    setSelectedProjectIdState(null);
+    setSelectedBranchIdState(null);
+    setSelectedDatabase(null);
+  }, []);
+  const setSelectedProjectId = useCallback((id: string | null) => {
+    setSelectedProjectIdState(id);
+    setSelectedBranchIdState(null);
+    setSelectedDatabase(null);
+  }, []);
+  const setSelectedBranchId = useCallback((id: string | null) => {
+    setSelectedBranchIdState(id);
+    setSelectedDatabase(null);
+  }, []);
+
   const setApiKey = useCallback((k: string | null) => setApiKeyState(k), []);
   const signOut = useCallback(() => {
     setApiKeyState(null);
-    setSelectedProjectId(null); setSelectedBranchId(null); setSelectedDatabase(null);
+    setSelectedOrganizationIdState(null);
+    setSelectedProjectIdState(null); setSelectedBranchIdState(null); setSelectedDatabase(null);
   }, []);
   const forgetStoredKey = useCallback(async () => {
     await forgetKey(); await refreshVaultState();
@@ -107,18 +129,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const clearLocalCache = useCallback(() => {
     localStorage.removeItem(SELECT_KEY);
     setDiagnostics([]);
-    setSelectedProjectId(null); setSelectedBranchId(null); setSelectedDatabase(null);
+    setSelectedOrganizationIdState(null); setSelectedProjectIdState(null); setSelectedBranchIdState(null); setSelectedDatabase(null);
   }, []);
 
   const value = useMemo<AppState>(() => ({
     apiKey, setApiKey, signOut,
     hasStoredVault, refreshVaultState, forgetStoredKey,
+    selectedOrganizationId, setSelectedOrganizationId,
     selectedProjectId, setSelectedProjectId,
     selectedBranchId, setSelectedBranchId,
     selectedDatabase, setSelectedDatabase,
     settings, updateSettings,
     diagnostics, clearDiagnostics, clearLocalCache,
-  }), [apiKey, hasStoredVault, selectedProjectId, selectedBranchId, selectedDatabase, settings, diagnostics, setApiKey, signOut, refreshVaultState, forgetStoredKey, updateSettings, clearDiagnostics, clearLocalCache]);
+  }), [apiKey, hasStoredVault, selectedOrganizationId, selectedProjectId, selectedBranchId, selectedDatabase, settings, diagnostics, setApiKey, signOut, refreshVaultState, forgetStoredKey, setSelectedOrganizationId, setSelectedProjectId, setSelectedBranchId, updateSettings, clearDiagnostics, clearLocalCache]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
