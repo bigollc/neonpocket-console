@@ -6,6 +6,7 @@ import { AppProvider, useApp } from "@/state/AppContext";
 import { Shell } from "@/layout/Shell";
 import Connect from "@/pages/Connect";
 import Dashboard from "@/pages/Dashboard";
+import Organizations from "@/pages/Organizations";
 import Branches from "@/pages/Branches";
 import Integrations from "@/pages/Integrations";
 import Auth from "@/pages/Auth";
@@ -42,6 +43,7 @@ const App = () => (
             <Route element={<Protected><Shell /></Protected>}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
+              <Route path="organizations" element={<Organizations />} />
               <Route path="branches" element={<Branches />} />
               <Route path="integrations" element={<Integrations />} />
               <Route path="auth" element={<Auth />} />

@@ -12,14 +12,15 @@ bun run lint
 bun run test
 ```
 
-Open the app, paste your Neon API key (create one in the Neon Console under **Account → API keys**), and you're in.
+Open the app, paste your Neon API key (generate one from the Neon Console profile menu under **Account settings → API keys**), choose a workspace/organization, then select one of its projects.
 
 ## Architecture
 
 - **Typed Neon API client** (`src/lib/neon/`) with two modes:
   - **Direct** — calls `https://console.neon.tech/api/v2/*` from the browser.
-  - **Fallback proxy** — POSTs to `/api/neon-proxy` (`api/neon-proxy.ts`), a **stateless** forwarder that relays the current request and never persists keys, bodies, or responses.
+  - **Fallback proxy** — the default mode. POSTs to `/api/neon-proxy` (`api/neon-proxy.ts`), a **stateless** forwarder that relays the current request and never persists keys, bodies, or responses. Vite serves the same proxy handler during local development.
 - **Encrypted local vault** (`src/lib/vault.ts`): IndexedDB + Web Crypto AES-GCM. Optional PBKDF2 passphrase. Forget-key and clear-cache controls in Settings.
+- **Organization-first workspace flow**: the account shell loads the current user and organization list, requires a workspace before project tools appear, and fetches projects with `org_id` when an organization is selected.
 - **TanStack Query** for all remote data, with AbortController and operation polling (running operations are polled, finished/failed stop).
 - **Normalized errors** everywhere: status, message, request id, route, timestamp, retryable.
 - **No app database. No app-created SQL tables. No app-created RLS policies.** The only persisted local state is UI preferences, the selected project/branch, the diagnostics ring buffer, and (optionally) the encrypted API key.
@@ -38,7 +39,7 @@ Capabilities differ by account, plan, organization role, beta access, and API ve
 
 ## CORS fallback
 
-If direct browser calls to `console.neon.tech` are blocked by CORS, switch **API mode → Fallback proxy** in Settings. Deploy `api/neon-proxy.ts` to any platform supporting Vercel-style Web Fetch handlers (Vercel, Netlify, Deno Deploy). The proxy forwards only to Neon's base URL, rejects non-Neon paths, and persists nothing.
+NeonPocket defaults to **API mode → Fallback proxy** because direct browser calls to `console.neon.tech` can be blocked by CORS. Local `bun run dev` serves this route through Vite middleware. For production, deploy `api/neon-proxy.ts` to a platform that supports Web Fetch-style serverless handlers (for example Vercel Edge, Netlify, or Deno Deploy). The proxy forwards only to Neon's base URL, rejects non-Neon paths, and persists nothing.
 
 ## Security
 
