@@ -5,8 +5,10 @@ import { Page, PageHeader } from "@/layout/PageHeader";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useApp } from "@/state/AppContext";
-import { NEON_BASE } from "@/lib/neon/client";
+import { NEON_BASE, NEON_PROXY_URL } from "@/lib/neon/client";
 import { NeonService } from "@/lib/neon/service";
 
 function redact(value: string | null | undefined) {
@@ -17,6 +19,8 @@ function redact(value: string | null | undefined) {
 export default function Diagnostics() {
   const { apiKey, settings, diagnostics, clearDiagnostics } = useApp();
   const [running, setRunning] = useState(false);
+  const [testKey, setTestKey] = useState("");
+  const effectiveKey = apiKey || testKey.replace(/\s+/g, "");
 
   const report = useMemo(() => ({
     generated_at: new Date().toISOString(),
@@ -24,12 +28,13 @@ export default function Diagnostics() {
     page_origin: window.location.origin,
     page_path: window.location.pathname,
     neon_base: NEON_BASE,
+    neon_proxy_url: NEON_PROXY_URL,
     api_mode: settings.apiMode,
-    api_key_hint: redact(apiKey),
+    api_key_hint: redact(effectiveKey),
     user_agent: navigator.userAgent,
     online: navigator.onLine,
     diagnostics,
-  }), [apiKey, diagnostics, settings.apiMode]);
+  }), [diagnostics, effectiveKey, settings.apiMode]);
 
   const reportText = JSON.stringify(report, null, 2);
 
@@ -39,18 +44,18 @@ export default function Diagnostics() {
   }
 
   async function runChecks() {
-    if (!apiKey) {
-      toast.error("No API key in memory");
+    if (!effectiveKey) {
+      toast.error("No API key available for diagnostics");
       return;
     }
     setRunning(true);
     try {
-      await NeonService.getCurrentUser({ apiKey, mode: settings.apiMode });
-      await NeonService.listOrganizations({ apiKey, mode: settings.apiMode });
-      await NeonService.listProjects({ apiKey, mode: settings.apiMode });
-      toast.success("Direct Neon checks completed");
+      await NeonService.getCurrentUser({ apiKey: effectiveKey, mode: settings.apiMode });
+      await NeonService.listOrganizations({ apiKey: effectiveKey, mode: settings.apiMode });
+      await NeonService.listProjects({ apiKey: effectiveKey, mode: settings.apiMode });
+      toast.success("Neon checks completed");
     } catch (error: any) {
-      toast.error("Direct Neon check failed", { description: error?.message || "Unknown error" });
+      toast.error("Neon check failed", { description: error?.message || "Unknown error" });
     } finally {
       setRunning(false);
     }
@@ -63,7 +68,7 @@ export default function Diagnostics() {
         description="Copy this report after a failed connection attempt. API keys and Authorization headers are never logged."
         actions={(
           <>
-            <Button variant="outline" size="sm" onClick={runChecks} disabled={running || !apiKey}>
+            <Button variant="outline" size="sm" onClick={runChecks} disabled={running || !effectiveKey}>
               <Play className="size-3.5 mr-1.5" /> {running ? "Running…" : "Run checks"}
             </Button>
             <Button variant="outline" size="sm" onClick={copyReport}>
@@ -75,12 +80,29 @@ export default function Diagnostics() {
 
       <Alert className="mb-4">
         <Activity className="size-4" />
-        <AlertTitle>Direct browser transport</AlertTitle>
+        <AlertTitle>Auto transport</AlertTitle>
         <AlertDescription>
-          This build sends requests directly to <span className="mono">{NEON_BASE}</span>. If you see status <span className="mono">0</span> with
-          a browser message such as <span className="mono">Load failed</span>, the browser blocked the network/CORS preflight before Neon returned a JSON response.
+          Auto mode tries <span className="mono">{NEON_BASE}</span> first. If Safari/browser returns <span className="mono">Load failed</span>,
+          it falls back to <span className="mono">{NEON_PROXY_URL}</span>. On static Lovable hosts, set <span className="mono">VITE_NEON_PROXY_URL</span>
+          to a deployed serverless endpoint because <span className="mono">/api/neon-proxy</span> is not executed by static hosting.
         </AlertDescription>
       </Alert>
+
+      {!apiKey && (
+        <div className="hairline rounded-lg bg-card p-3 mb-4 space-y-1.5">
+          <Label htmlFor="diag-key">Temporary Neon API key for diagnostics</Label>
+          <Input
+            id="diag-key"
+            type="password"
+            value={testKey}
+            onChange={e => setTestKey(e.target.value)}
+            placeholder="napi_…"
+            autoComplete="off"
+            className="mono"
+          />
+          <div className="text-[11px] text-muted-foreground">This key stays in this page state only and is redacted in copied reports.</div>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-3 gap-3 mb-4">
         <div className="hairline rounded-lg bg-card p-3">
