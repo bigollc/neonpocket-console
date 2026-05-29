@@ -113,6 +113,15 @@ export async function unlockKey(passphrase?: string): Promise<string> {
   }
 }
 
+export async function removeVaultPassphrase(currentPassphrase: string): Promise<void> {
+  if (!currentPassphrase) throw new Error("Current passphrase is required");
+  const rec = await idbGet<VaultRecord>(KEY_ID);
+  if (!rec) throw new Error("No local key stored");
+  if (!rec.usesPassphrase) throw new Error("Stored key does not use a passphrase");
+  const apiKey = await unlockKey(currentPassphrase);
+  await saveKey(apiKey);
+}
+
 export async function forgetKey(): Promise<void> {
   await idbDel(KEY_ID);
 }
