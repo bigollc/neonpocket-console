@@ -8,8 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Copy, Mail } from "lucide-react";
 import { toast } from "sonner";
 
+const SUPPORT_EMAIL = "info@webusta.org";
+
 export default function Feedback() {
-  const { selectedProjectId, selectedBranchId, settings, diagnostics } = useApp();
+  const { selectedProjectId, selectedBranchId, settings, diagnostics, playUiSound } = useApp();
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
   const lastFailed = diagnostics.find(d => !d.ok);
@@ -33,7 +35,7 @@ Diagnostics (no secrets included):
 ${JSON.stringify(diag, null, 2)}
 \`\`\``;
 
-  const mailto = `mailto:?subject=${encodeURIComponent("NeonPocket Feedback: " + (title || ""))}&body=${encodeURIComponent(template)}`;
+  const mailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("NeonPocket Feedback: " + (title || ""))}&body=${encodeURIComponent(template)}`;
 
   return (
     <Page>
@@ -42,9 +44,10 @@ ${JSON.stringify(diag, null, 2)}
         <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={e => setTitle(e.target.value)} /></div>
         <div className="space-y-1.5"><Label>Details</Label><Textarea value={details} onChange={e => setDetails(e.target.value)} className="min-h-[160px]" /></div>
         <div className="flex gap-2">
-          <Button onClick={() => { navigator.clipboard.writeText(template); toast.success("Copied issue template"); }}><Copy className="size-4 mr-2" />Copy</Button>
-          <Button variant="outline" asChild><a href={mailto}><Mail className="size-4 mr-2" />Open email</a></Button>
+          <Button onClick={() => { navigator.clipboard.writeText(template); playUiSound("success"); toast.success("Copied issue template"); }}><Copy className="size-4 mr-2" />Copy</Button>
+          <Button variant="outline" asChild><a href={mailto} onClick={() => playUiSound("nav")}><Mail className="size-4 mr-2" />Open email</a></Button>
         </div>
+        <div className="text-xs text-muted-foreground">Emails are addressed to <span className="mono">{SUPPORT_EMAIL}</span>.</div>
         <div className="hairline rounded-md bg-card">
           <div className="px-3 py-2 border-b border-border text-xs">Preview</div>
           <pre className="p-3 text-[11px] mono whitespace-pre-wrap">{template}</pre>
