@@ -43,7 +43,7 @@ const SETTINGS_KEY = "neonpocket.settings.v1";
 const SELECT_KEY = "neonpocket.select.v1";
 
 const defaultSettings: Settings = {
-  theme: "system", motion: "full", sounds: false, apiMode: "direct", localHistory: false,
+  theme: "system", motion: "full", sounds: false, apiMode: "auto", localHistory: false,
 };
 
 const Ctx = createContext<AppState | null>(null);
@@ -51,7 +51,8 @@ const Ctx = createContext<AppState | null>(null);
 function loadSettings(): Settings {
   try {
     const loaded = { ...defaultSettings, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")) };
-    return { ...loaded, apiMode: "direct" };
+    const apiMode = ["auto", "direct", "proxy"].includes(loaded.apiMode) ? loaded.apiMode : "auto";
+    return { ...loaded, apiMode };
   } catch {
     return defaultSettings;
   }
