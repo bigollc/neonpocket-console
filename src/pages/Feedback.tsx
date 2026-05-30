@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Copy, Info, Mail } from "lucide-react";
+import { Info, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 const SUPPORT_EMAIL = "info@webusta.org";
@@ -47,15 +47,7 @@ function boolLabel(value: boolean) {
 }
 
 export default function Feedback() {
-  const {
-    selectedOrganizationId,
-    selectedProjectId,
-    selectedBranchId,
-    selectedDatabase,
-    settings,
-    diagnostics,
-    playUiSound,
-  } = useApp();
+  const { selectedOrganizationId, selectedProjectId, selectedBranchId, selectedDatabase, settings, diagnostics, playUiSound } = useApp();
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
   const canSubmit = title.trim().length > 0 && details.trim().length > 0;
@@ -73,11 +65,7 @@ export default function Feedback() {
   const device = useMemo(() => {
     const nav = window.navigator;
     const screenInfo = window.screen;
-    const viewport = `${window.innerWidth}x${window.innerHeight}`;
-    const screenResolution = `${screenInfo.width}x${screenInfo.height}`;
-    const pixelRatio = window.devicePixelRatio || 1;
     const ua = nav.userAgent || "";
-
     return {
       device_type: deviceType(ua),
       operating_system: osName(ua, nav.platform || ""),
@@ -85,14 +73,14 @@ export default function Feedback() {
       platform: nav.platform || null,
       language: nav.language || null,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
-      viewport,
-      screen_resolution: screenResolution,
-      device_pixel_ratio: pixelRatio,
+      viewport: `${window.innerWidth}x${window.innerHeight}`,
+      screen_resolution: `${screenInfo.width}x${screenInfo.height}`,
+      device_pixel_ratio: window.devicePixelRatio || 1,
       user_agent: ua,
     };
   }, []);
 
-  const diag = useMemo(() => ({
+  const diagnosticPayload = useMemo(() => ({
     app: "NeonPocket Console 0.1.0",
     generated_at: new Date().toISOString(),
     route: window.location.pathname,
@@ -146,36 +134,24 @@ export default function Feedback() {
 
   const template = `## ${title || "Feedback title required"}
 
-${details || "Feedback details required before copying or opening email."}
+${details || "Feedback details required before opening email."}
 
 ---
 ${humanSummary}
 
 ---
-Diagnostics payload (no API keys, JWTs, request bodies, or secrets included):
+Diagnostic payload:
 \`\`\`json
-${JSON.stringify(diag, null, 2)}
+${JSON.stringify(diagnosticPayload, null, 2)}
 \`\`\``;
 
   const mailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("NeonPocket Feedback: " + title.trim())}&body=${encodeURIComponent(template)}`;
 
-  function requireFields() {
-    if (canSubmit) return true;
-    playUiSound("warning");
-    toast.error("Title and details are required", { description: "Add both fields before copying or opening email." });
-    return false;
-  }
-
-  async function copyTemplate() {
-    if (!requireFields()) return;
-    await navigator.clipboard.writeText(template);
-    playUiSound("success");
-    toast.success("Copied issue template");
-  }
-
   function openEmail(event: React.MouseEvent<HTMLAnchorElement>) {
-    if (!requireFields()) {
+    if (!canSubmit) {
       event.preventDefault();
+      playUiSound("warning");
+      toast.error("Title and details are required", { description: "Add both fields before opening email." });
       return;
     }
     playUiSound("nav");
@@ -183,7 +159,7 @@ ${JSON.stringify(diag, null, 2)}
 
   return (
     <Page>
-      <PageHeader title="Feedback" description="Local-only composer. Diagnostics never contain API keys, JWTs, request bodies, or secrets." />
+      <PageHeader title="Feedback" description="Local-only composer. Diagnostics exclude API keys and other sensitive values." />
       <div className="space-y-3 max-w-2xl">
         <div className="space-y-1.5">
           <Label>Title</Label>
@@ -194,17 +170,14 @@ ${JSON.stringify(diag, null, 2)}
           <Textarea value={details} onChange={e => setDetails(e.target.value)} className="min-h-[160px]" placeholder="What happened, what did you expect, and what were you trying to do?" />
         </div>
         <div className="flex gap-2">
-          <Button onClick={copyTemplate} disabled={!canSubmit}>
-            <Copy className="size-4 mr-2" />Copy
-          </Button>
-          <Button variant="outline" asChild>
-            <a href={canSubmit ? mailto : undefined} aria-disabled={!canSubmit} onClick={openEmail} className={!canSubmit ? "pointer-events-none opacity-50" : undefined}>
+          <Button variant="outline" asChild disabled={!canSubmit}>
+            <a href={canSubmit ? mailto : "#"} aria-disabled={!canSubmit} onClick={openEmail} className={!canSubmit ? "pointer-events-none opacity-50" : undefined}>
               <Mail className="size-4 mr-2" />Open email
             </a>
           </Button>
         </div>
-        <div className="flex items-start gap-2 rounded-md border bg-card/70 p-3 text-xs text-muted-foreground">
-          <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border text-foreground">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="grid size-5 shrink-0 place-items-center rounded-full border text-foreground">
             <Info className="size-3" />
           </span>
           <span>Emails are addressed to <span className="mono">{SUPPORT_EMAIL}</span>.</span>
