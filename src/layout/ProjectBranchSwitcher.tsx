@@ -64,6 +64,7 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
   const workspace = workspaces.find(w => w.id === selectedOrganizationId);
   const proj = selectedOrganizationId ? projects.data?.projects?.find((p: any) => p.id === selectedProjectId) : undefined;
   const br = selectedOrganizationId && selectedProjectId ? branches.data?.branches?.find((b: any) => b.id === selectedBranchId) : undefined;
+  const selectedItemClass = "bg-accent text-accent-foreground";
 
   return (
     <div className={cn("flex items-center gap-1.5", compact && "scale-95 origin-left")}>
@@ -81,20 +82,23 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
             <CommandList>
               <CommandEmpty>{orgs.isLoading ? "Loading…" : "No organizations"}</CommandEmpty>
               <CommandGroup heading="Organizations">
-                {workspaces.map((org: any) => (
-                  <CommandItem key={org.id} value={`${org.name} ${org.id}`} onSelect={() => {
-                    setSelectedOrganizationId(org.id);
-                    resetProjectContext();
-                    setWorkspaceOpen(false);
-                    navigate("/dashboard");
-                    playUiSound("nav");
-                  }}>
-                    <Building2 className="size-3.5 mr-2 opacity-70" />
-                    <span className="truncate">{org.name}</span>
-                    {org.plan && <span className="ml-2 rounded bg-muted px-1 text-[10px] text-muted-foreground">{org.plan}</span>}
-                    {org.id === selectedOrganizationId && <Check className="size-3.5 ml-auto" />}
-                  </CommandItem>
-                ))}
+                {workspaces.map((org: any) => {
+                  const selected = org.id === selectedOrganizationId;
+                  return (
+                    <CommandItem key={org.id} value={`${org.name} ${org.id}`} className={cn(selected && selectedItemClass)} onSelect={() => {
+                      setSelectedOrganizationId(org.id);
+                      resetProjectContext();
+                      setWorkspaceOpen(false);
+                      navigate("/dashboard");
+                      playUiSound("nav");
+                    }}>
+                      <Building2 className="size-3.5 mr-2 opacity-70" />
+                      <span className="truncate">{org.name}</span>
+                      {org.plan && <span className="ml-2 rounded bg-muted px-1 text-[10px] text-muted-foreground">{org.plan}</span>}
+                      {selected && <Check className="size-3.5 ml-auto" />}
+                    </CommandItem>
+                  );
+                })}
               </CommandGroup>
             </CommandList>
           </Command>
@@ -116,19 +120,22 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
               <CommandList>
                 <CommandEmpty>{projects.isLoading ? "Loading…" : "No projects"}</CommandEmpty>
                 <CommandGroup>
-                  {projects.data?.projects?.map((p: any) => (
-                    <CommandItem key={p.id} value={`${p.name} ${p.id}`} onSelect={() => {
-                      setSelectedProjectId(p.id);
-                      setProjectOpen(false);
-                      if (!location.pathname.startsWith("/project")) navigate("/project/dashboard");
-                      playUiSound("nav");
-                    }}>
-                      <FolderGit2 className="size-3.5 mr-2 opacity-70" />
-                      <span className="truncate">{p.name}</span>
-                      <span className="ml-auto text-[10px] mono text-muted-foreground">{p.region_id}</span>
-                      {p.id === selectedProjectId && <Check className="size-3.5 ml-2" />}
-                    </CommandItem>
-                  ))}
+                  {projects.data?.projects?.map((p: any) => {
+                    const selected = p.id === selectedProjectId;
+                    return (
+                      <CommandItem key={p.id} value={`${p.name} ${p.id}`} className={cn(selected && selectedItemClass)} onSelect={() => {
+                        setSelectedProjectId(p.id);
+                        setProjectOpen(false);
+                        if (!location.pathname.startsWith("/project")) navigate("/project/dashboard");
+                        playUiSound("nav");
+                      }}>
+                        <FolderGit2 className="size-3.5 mr-2 opacity-70" />
+                        <span className="truncate">{p.name}</span>
+                        <span className="ml-auto text-[10px] mono text-muted-foreground">{p.region_id}</span>
+                        {selected && <Check className="size-3.5 ml-2" />}
+                      </CommandItem>
+                    );
+                  })}
                 </CommandGroup>
               </CommandList>
             </Command>
@@ -151,19 +158,22 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
               <CommandList>
                 <CommandEmpty>{branches.isLoading ? "Loading…" : "No branches"}</CommandEmpty>
                 <CommandGroup>
-                  {branches.data?.branches?.map((b: any) => (
-                    <CommandItem key={b.id} value={`${b.name} ${b.id}`} onSelect={() => {
-                      setSelectedBranchId(b.id);
-                      setBranchOpen(false);
-                      if (!location.pathname.startsWith("/branch")) navigate("/branch/overview");
-                      playUiSound("nav");
-                    }}>
-                      <GitBranch className="size-3.5 mr-2 opacity-70" />
-                      <span className="truncate">{b.name}</span>
-                      {(b.primary || b.default) && <span className="ml-2 text-[10px] px-1 rounded bg-muted text-muted-foreground">primary</span>}
-                      {b.id === selectedBranchId && <Check className="size-3.5 ml-auto" />}
-                    </CommandItem>
-                  ))}
+                  {branches.data?.branches?.map((b: any) => {
+                    const selected = b.id === selectedBranchId;
+                    return (
+                      <CommandItem key={b.id} value={`${b.name} ${b.id}`} className={cn(selected && selectedItemClass)} onSelect={() => {
+                        setSelectedBranchId(b.id);
+                        setBranchOpen(false);
+                        if (!location.pathname.startsWith("/branch")) navigate("/branch/overview");
+                        playUiSound("nav");
+                      }}>
+                        <GitBranch className="size-3.5 mr-2 opacity-70" />
+                        <span className="truncate">{b.name}</span>
+                        {(b.primary || b.default) && <span className="ml-2 text-[10px] px-1 rounded bg-muted text-muted-foreground">primary</span>}
+                        {selected && <Check className="size-3.5 ml-auto" />}
+                      </CommandItem>
+                    );
+                  })}
                 </CommandGroup>
               </CommandList>
             </Command>
