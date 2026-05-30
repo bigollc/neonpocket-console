@@ -1,9 +1,17 @@
-interface CloudProfilePayload {
+export interface CloudProfilePayload {
   apiKey: string;
   userName: string;
   email: string;
   deviceAuthEnabled: boolean;
   settings: Record<string, unknown>;
+}
+
+export interface CloudProfileResult {
+  ok: boolean;
+  stored: boolean;
+  status: number;
+  reason?: string;
+  message?: string;
 }
 
 function bytesToHex(bytes: Uint8Array) {
@@ -21,7 +29,7 @@ function keyHint(apiKey: string) {
   return `${apiKey.slice(0, 5)}…${apiKey.slice(-4)}`;
 }
 
-export async function syncCloudProfile(payload: CloudProfilePayload) {
+export async function syncCloudProfile(payload: CloudProfilePayload): Promise<CloudProfileResult> {
   try {
     const response = await fetch("/api/app-profile", {
       method: "POST",
@@ -38,8 +46,23 @@ export async function syncCloudProfile(payload: CloudProfilePayload) {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       }),
     });
-    return response.ok;
-  } catch {
-    return false;
+
+    let body: any = null;
+    try { body = await response.json(); } catch { body = null; }
+
+    return {
+      ok: response.ok && !!body?.ok,
+      stored: !!body?.stored,
+      status: response.status,
+      reason: body?.reason,
+      message: body?.error || body?.message,
+    };
+  } catch (error: any) {
+    return {
+      ok: false,
+      stored: false,
+      status: 0,
+      message: error?.message || "Could not reach app profile endpoint",
+    };
   }
 }
