@@ -14,7 +14,7 @@ import { useApp } from "@/state/AppContext";
 import { normalizeUser, useCurrentUserQuery, userEmail } from "@/state/queries";
 
 function Sections({ onNavigate }: { onNavigate?: () => void }) {
-  const { selectedOrganizationId, selectedProjectId, selectedBranchId, playUiSound } = useApp();
+  const { selectedOrganizationId, selectedProjectId, selectedBranchId, resetPlatformContext, playUiSound } = useApp();
   const groups = [
     { key: "account", title: "Platform" },
     { key: "project", title: "Project" },
@@ -36,7 +36,11 @@ function Sections({ onNavigate }: { onNavigate?: () => void }) {
           <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{g.title}</div>
           <div className="flex flex-col gap-0.5">
             {visibleItems.filter(n => n.section === g.key).map(n => (
-              <NavLink key={n.to} to={n.to} onClick={() => { playUiSound("nav"); onNavigate?.(); }}
+              <NavLink key={n.to} to={n.to} onClick={() => {
+                if (n.to === "/dashboard") resetPlatformContext();
+                playUiSound("nav");
+                onNavigate?.();
+              }}
                 className={({ isActive }) => cn(
                   "group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
                   isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent/60",
@@ -84,7 +88,7 @@ export function Shell() {
   const location = useLocation();
   const [drawer, setDrawer] = useState(false);
   const navigate = useNavigate();
-  const { settings, selectedOrganizationId, selectedProjectId, selectedBranchId, playUiSound } = useApp();
+  const { settings, selectedOrganizationId, selectedProjectId, selectedBranchId, resetPlatformContext, playUiSound } = useApp();
   const variants = settings.motion === "reduced"
     ? { initial: {}, animate: {}, exit: {} }
     : { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -6 } };
@@ -165,7 +169,11 @@ export function Shell() {
               {mobileItems.map(item => {
                 const active = location.pathname.startsWith(item.to);
                 return (
-                  <button key={item.to} onClick={() => { playUiSound("nav"); navigate(item.to); }} className={cn(
+                  <button key={item.to} onClick={() => {
+                    if (item.to === "/dashboard") resetPlatformContext();
+                    playUiSound("nav");
+                    navigate(item.to);
+                  }} className={cn(
                     "relative flex min-w-0 flex-col items-center justify-center gap-0.5 py-2 text-[10px]",
                     active ? "text-foreground" : "text-muted-foreground"
                   )}>
