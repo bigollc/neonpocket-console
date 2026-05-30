@@ -16,7 +16,7 @@ import { normalizeUser, useCurrentUserQuery, userEmail } from "@/state/queries";
 function Sections({ onNavigate }: { onNavigate?: () => void }) {
   const { selectedOrganizationId, selectedProjectId, selectedBranchId, playUiSound } = useApp();
   const groups = [
-    { key: "account", title: "Account" },
+    { key: "account", title: "Platform" },
     { key: "project", title: "Project" },
     { key: "branch", title: "Branch" },
     { key: "backend", title: "App Backend" },

@@ -1,216 +1,156 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useMemo } from "react";
+import { Link } from "react-router-dom";
+import { useQueries } from "@tanstack/react-query";
+import { formatDistanceToNow } from "date-fns";
+import { Activity, BarChart3, Cable, Database, FolderGit2, GitBranch, Network, Plus, Server, TerminalSquare } from "lucide-react";
 import { Page, PageHeader } from "@/layout/PageHeader";
-import { useApp } from "@/state/AppContext";
-import { useProjectsQuery, useBranchesQuery, useDatabasesQuery, useRolesQuery, useEndpointsQuery, useOperationsQuery, useOrganizationsQuery, DEFAULT_WORKSPACE_ID, normalizeUser, useCurrentUserQuery, userEmail } from "@/state/queries";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-dot";
-import { Activity, Building2, Cable, Database, FolderGit2, GitBranch, KeyRound, Plus, TerminalSquare, X } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { NeonService } from "@/lib/neon/service";
+import { useApp } from "@/state/AppContext";
+import { DEFAULT_WORKSPACE_ID, useProjectsQuery, useConsumptionHistoryQuery } from "@/state/queries";
 
-function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: React.ReactNode }) {
+function Stat({ label, value, hint, icon: Icon }: { label: string; value: React.ReactNode; hint?: React.ReactNode; icon?: any }) {
   return (
     <div className="hairline rounded-lg p-4 bg-card">
-      <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{label}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{label}</div>
+        {Icon && <Icon className="size-4 text-muted-foreground" />}
+      </div>
       <div className="text-2xl font-semibold mt-1 tabular-nums">{value}</div>
       {hint && <div className="text-[11px] text-muted-foreground mt-1">{hint}</div>}
     </div>
   );
 }
 
-function greetingBand(date = new Date()) {
-  const h = date.getHours();
-  if (h >= 5 && h < 11) return "morning";
-  if (h >= 11 && h < 17) return "day";
-  if (h >= 17 && h < 22) return "evening";
-  return "night";
+function bytesToGb(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0";
+  const gb = bytes / 1024 ** 3;
+  return gb < 10 ? gb.toFixed(2) : gb.toFixed(1);
 }
 
-function greetingText(band: string, name: string) {
-  const first = name?.split(/\s+/)[0] || "Bigo";
-  if (band === "morning") return { title: `Good morning, ${first}`, desc: "Start with a workspace, choose a project, then keep operations under control." };
-  if (band === "day") return { title: `Good day, ${first}`, desc: "Your Neon workspace is ready. Pick the project you want to operate on." };
-  if (band === "evening") return { title: `Good evening, ${first}`, desc: "A focused evening pass: check projects, branches, endpoints, and recent operations." };
-  return { title: `Still building, ${first}?`, desc: "Late-session mode is on. Keep the dashboard lean and move deliberately." };
+function cuSecondsToHours(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0";
+  const hours = seconds / 3600;
+  return hours < 10 ? hours.toFixed(2) : hours.toFixed(1);
 }
 
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
+function metricTotal(payload: any, names: string[]) {
+  const wanted = new Set(names);
+  let total = 0;
+
+  function visit(value: any, parentKey?: string) {
+    if (typeof value === "number" && parentKey && wanted.has(parentKey)) {
+      total += value;
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    if (typeof value.value === "number" && typeof value.metric === "string" && wanted.has(value.metric)) total += value.value;
+    if (typeof value.value === "number" && typeof value.name === "string" && wanted.has(value.name)) total += value.value;
+    for (const [key, child] of Object.entries(value)) visit(child, key);
+  }
+
+  visit(payload);
+  return total;
+}
+
+function newestTimestamp(item: any) {
+  return item?.updated_at || item?.created_at || item?.completed_at || item?.started_at || "";
 }
 
 export default function Dashboard() {
-  const { selectedOrganizationId, setSelectedOrganizationId, selectedProjectId, setSelectedProjectId, selectedBranchId, settings, playUiSound } = useApp();
-  const navigate = useNavigate();
-  const orgs = useOrganizationsQuery();
+  const { apiKey, settings, selectedOrganizationId, setSelectedOrganizationId, setSelectedProjectId, playUiSound } = useApp();
   const projects = useProjectsQuery();
-  const branches = useBranchesQuery(selectedProjectId);
-  const databases = useDatabasesQuery(selectedProjectId, selectedBranchId);
-  const roles = useRolesQuery(selectedProjectId, selectedBranchId);
-  const endpoints = useEndpointsQuery(selectedProjectId);
-  const operations = useOperationsQuery(selectedProjectId);
-  const currentUser = useCurrentUserQuery();
-  const user = normalizeUser(currentUser.data);
-  const name = user?.name || userEmail(user) || "Bigo";
-  const band = greetingBand();
-  const greeting = greetingText(band, name);
-  const dismissKey = `neonpocket.greeting.dismissed.${todayKey()}.${band}.${userEmail(user) || name}`;
-  const [greetingDismissed, setGreetingDismissed] = useState(() => localStorage.getItem(dismissKey) === "1");
+  const projectList = projects.data?.projects || [];
+  const projectIds = projectList.map((project: any) => project.id).filter(Boolean).slice(0, 100);
+  const explicitOrgId = selectedOrganizationId && selectedOrganizationId !== DEFAULT_WORKSPACE_ID ? selectedOrganizationId : undefined;
+  const consumption = useConsumptionHistoryQuery({ projectIds, orgId: explicitOrgId });
 
-  useEffect(() => {
-    setGreetingDismissed(localStorage.getItem(dismissKey) === "1");
-  }, [dismissKey]);
+  const branchQueries = useQueries({
+    queries: projectIds.slice(0, 25).map(projectId => ({
+      queryKey: ["platform-branches", projectId, settings.apiMode],
+      enabled: !!apiKey,
+      queryFn: ({ signal }: { signal: AbortSignal }) => NeonService.listBranches({ apiKey: apiKey!, mode: settings.apiMode, signal }, projectId),
+      staleTime: 30_000,
+    })),
+  });
 
-  function dismissGreeting() {
-    localStorage.setItem(dismissKey, "1");
-    setGreetingDismissed(true);
-    playUiSound("soft");
-  }
+  const operationQueries = useQueries({
+    queries: projectIds.slice(0, 25).map(projectId => ({
+      queryKey: ["platform-operations", projectId, settings.apiMode],
+      enabled: !!apiKey,
+      queryFn: ({ signal }: { signal: AbortSignal }) => NeonService.listOperations({ apiKey: apiKey!, mode: settings.apiMode, signal }, projectId, 10),
+      staleTime: 30_000,
+    })),
+  });
 
-  const proj = projects.data?.projects?.find((p: any) => p.id === selectedProjectId);
-  const selectedWorkspaceName = useMemo(() => {
-    if (selectedOrganizationId === DEFAULT_WORKSPACE_ID) return "Default workspace";
-    return orgs.data?.organizations?.find((org: any) => org.id === selectedOrganizationId)?.name;
-  }, [orgs.data?.organizations, selectedOrganizationId]);
+  const allBranches = useMemo(() => branchQueries.flatMap((query, index) => {
+    const project = projectList[index];
+    return (query.data as any)?.branches?.map((branch: any) => ({ ...branch, project_name: project?.name, project_id: project?.id })) || [];
+  }), [branchQueries, projectList]);
 
-  if (!selectedOrganizationId) {
-    return (
-      <Page>
-        {settings.greetings && !greetingDismissed && (
-          <div className="relative overflow-hidden hairline rounded-xl bg-card p-4 mb-5">
-            <Button variant="ghost" size="icon" className="absolute right-2 top-2 size-8" onClick={dismissGreeting} aria-label="Dismiss greeting">
-              <X className="size-4" />
-            </Button>
-            <div className="text-xl font-semibold tracking-tight pr-8">{greeting.title}</div>
-            <div className="text-sm text-muted-foreground mt-1 max-w-2xl">{greeting.desc}</div>
-          </div>
-        )}
-        <PageHeader title="Dashboard" description="Choose a workspace first. Project tools stay locked until you explicitly select an organization or the default workspace." />
-        {orgs.isLoading ? <Skeleton className="h-32 w-full" /> : (
-          <div className="grid md:grid-cols-2 gap-3">
-            <button onClick={() => { setSelectedOrganizationId(DEFAULT_WORKSPACE_ID); playUiSound("nav"); }} className="hairline rounded-lg bg-card p-4 text-left hover:bg-accent/40 transition-colors">
-              <div className="flex items-center gap-2 text-sm font-medium"><Building2 className="size-4" /> Default workspace</div>
-              <div className="mt-1 text-xs text-muted-foreground">List projects available without an explicit organization filter.</div>
-            </button>
-            {orgs.data?.unavailable && (
-              <div className="hairline rounded-lg bg-card p-4 text-left md:col-span-2">
-                <div className="text-sm font-medium">Organization list unavailable for this key</div>
-                <div className="mt-1 text-xs text-muted-foreground break-words">You can still use the default workspace to list projects accessible to this API key.</div>
-              </div>
-            )}
-            {(orgs.data?.organizations || []).map((org: any) => (
-              <button key={org.id} onClick={() => { setSelectedOrganizationId(org.id); playUiSound("nav"); }} className="hairline rounded-lg bg-card p-4 text-left hover:bg-accent/40 transition-colors">
-                <div className="flex items-center gap-2 text-sm font-medium"><Building2 className="size-4" /> {org.name}</div>
-                <div className="mt-1 text-xs text-muted-foreground mono truncate">{org.id}</div>
-                {org.role && <div className="mt-2 inline-flex rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{org.role}</div>}
-              </button>
-            ))}
-          </div>
-        )}
-      </Page>
-    );
-  }
+  const allOperations = useMemo(() => operationQueries.flatMap((query, index) => {
+    const project = projectList[index];
+    return (query.data as any)?.operations?.map((operation: any) => ({ ...operation, project_name: project?.name, project_id: project?.id })) || [];
+  }).sort((a, b) => new Date(newestTimestamp(b)).getTime() - new Date(newestTimestamp(a)).getTime()), [operationQueries, projectList]);
+
+  const recentBranches = useMemo(() => [...allBranches].sort((a, b) => new Date(newestTimestamp(b)).getTime() - new Date(newestTimestamp(a)).getTime()).slice(0, 8), [allBranches]);
+  const activeEndpoints = useMemo(() => projectList.reduce((sum: number, project: any) => sum + (project?.compute_last_active_at || project?.active_time_seconds ? 1 : 0), 0), [projectList]);
+
+  const usagePayload = consumption.data;
+  const computeCuHours = cuSecondsToHours(metricTotal(usagePayload, ["compute_unit_seconds"]));
+  const storageGb = bytesToGb(metricTotal(usagePayload, ["root_branch_bytes_month", "child_branch_bytes_month", "snapshot_storage_bytes_month"]));
+  const historyGb = bytesToGb(metricTotal(usagePayload, ["instant_restore_bytes_month"]));
+  const transferGb = bytesToGb(metricTotal(usagePayload, ["public_network_transfer_bytes", "private_network_transfer_bytes"]));
+  const loadingBranches = branchQueries.some(query => query.isLoading);
+  const loadingOperations = operationQueries.some(query => query.isLoading);
 
   if (projects.isLoading) return <Page><Skeleton className="h-32 w-full" /></Page>;
   if (projects.error) return <Page><ErrorState error={projects.error} onRetry={() => projects.refetch()} /></Page>;
-  if (!projects.data?.projects?.length) {
-    return (
-      <Page>
-        <PageHeader title="Dashboard" description="No projects are available in the selected workspace." />
-        <EmptyState icon={FolderGit2} title="No projects in this workspace" description="Choose another organization or create a Neon project in the selected workspace." />
-      </Page>
-    );
-  }
-  if (!selectedProjectId || !proj) {
-    return (
-      <Page>
-        {settings.greetings && !greetingDismissed && (
-          <div className="relative overflow-hidden hairline rounded-xl bg-card p-4 mb-5">
-            <Button variant="ghost" size="icon" className="absolute right-2 top-2 size-8" onClick={dismissGreeting} aria-label="Dismiss greeting">
-              <X className="size-4" />
-            </Button>
-            <div className="text-xl font-semibold tracking-tight pr-8">{greeting.title}</div>
-            <div className="text-sm text-muted-foreground mt-1 max-w-2xl">{greeting.desc}</div>
-          </div>
-        )}
-        <PageHeader title="Dashboard" description={`Select a project from ${selectedWorkspaceName || "this workspace"}.`} />
-        <div className="grid md:grid-cols-2 gap-3">
-          {projects.data.projects.map((project: any) => (
-            <button key={project.id} onClick={() => { setSelectedProjectId(project.id); playUiSound("nav"); navigate("/dashboard"); }} className="hairline rounded-lg bg-card p-4 text-left hover:bg-accent/40 transition-colors">
-              <div className="flex items-center gap-2 text-sm font-medium"><FolderGit2 className="size-4" /> {project.name}</div>
-              <div className="mt-1 text-xs text-muted-foreground mono truncate">{project.id}</div>
-              <div className="mt-2 text-xs text-muted-foreground">{project.region_id} · PostgreSQL {project.pg_version ?? "—"}</div>
-            </button>
-          ))}
-        </div>
-      </Page>
-    );
-  }
 
   return (
     <Page>
-      {settings.greetings && !greetingDismissed && (
-        <div className="relative overflow-hidden hairline rounded-xl bg-card p-4 mb-5">
-          <Button variant="ghost" size="icon" className="absolute right-2 top-2 size-8" onClick={dismissGreeting} aria-label="Dismiss greeting">
-            <X className="size-4" />
-          </Button>
-          <div className="text-xl font-semibold tracking-tight pr-8">{greeting.title}</div>
-          <div className="text-sm text-muted-foreground mt-1 max-w-2xl">{greeting.desc}</div>
-        </div>
-      )}
-      <PageHeader title="Dashboard" description={proj?.name ? `${proj.name}` : "Select a project"} />
+      <PageHeader title="Dashboard" description="Platform overview across your Neon projects, usage, branches, and recent activity." />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Projects" value={projects.data?.projects?.length ?? "—"} />
-        <Stat label="Region" value={<span className="mono text-base">{proj?.region_id ?? "—"}</span>} />
-        <Stat label="Postgres" value={proj?.pg_version ?? "—"} />
-        <Stat label="Branches" value={branches.data?.branches?.length ?? (branches.isLoading ? "…" : "—")} />
-        <Stat label="Databases" value={databases.data?.databases?.length ?? (databases.isLoading ? "…" : "—")} hint="in current branch" />
-        <Stat label="Roles" value={roles.data?.roles?.length ?? (roles.isLoading ? "…" : "—")} hint="in current branch" />
-        <Stat label="Endpoints" value={endpoints.data?.endpoints?.length ?? (endpoints.isLoading ? "…" : "—")} />
-        <Stat label="Recent ops" value={operations.data?.operations?.length ?? (operations.isLoading ? "…" : "—")} />
+        <Stat label="Compute" value={consumption.isLoading ? "…" : computeCuHours} hint="CU-hrs" icon={Server} />
+        <Stat label="Storage" value={consumption.isLoading ? "…" : storageGb} hint="GB" icon={Database} />
+        <Stat label="History" value={consumption.isLoading ? "…" : historyGb} hint="GB" icon={BarChart3} />
+        <Stat label="Network transfer" value={consumption.isLoading ? "…" : transferGb} hint="GB" icon={Network} />
+        <Stat label="Projects" value={projectList.length} icon={FolderGit2} />
+        <Stat label="Branches" value={loadingBranches ? "…" : allBranches.length} hint={projectIds.length > 25 ? "first 25 projects" : undefined} icon={GitBranch} />
+        <Stat label="Recent activity" value={loadingOperations ? "…" : allOperations.length} hint="operations as API activity" icon={Activity} />
+        <Stat label="Active projects" value={activeEndpoints || "—"} hint="reported by project metadata" icon={Cable} />
       </div>
 
-      <div className="mt-6">
-        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Quick actions</div>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          {[
-            { to: "/branches", icon: GitBranch, label: "Create branch" },
-            { to: "/branch/overview", icon: Database, label: "Create database" },
-            { to: "/branch/overview", icon: KeyRound, label: "Create role" },
-            { to: "/branch/sql", icon: TerminalSquare, label: "Open SQL editor" },
-            { to: "/backend/data-api", icon: Cable, label: "Open Data API" },
-            { to: "/integrations", icon: Plus, label: "Integrations" },
-          ].map(a => (
-            <Button asChild key={a.label} variant="outline" className="justify-start h-11">
-              <Link to={a.to}><a.icon className="size-4 mr-2" />{a.label}</Link>
-            </Button>
-          ))}
+      {consumption.error && (
+        <div className="mt-4 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+          Usage metrics are available when the Neon consumption history API permits this key and plan. Project, branch, and activity data remain available below.
         </div>
-      </div>
+      )}
 
       <div className="mt-6 grid md:grid-cols-2 gap-4">
         <div className="hairline rounded-lg bg-card">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <div className="flex items-center gap-2 text-sm font-medium"><Activity className="size-4" /> Recent operations</div>
+            <div className="flex items-center gap-2 text-sm font-medium"><FolderGit2 className="size-4" /> Projects</div>
+            <Button asChild size="sm" variant="outline"><Link to="/project/dashboard"><Plus className="size-4 mr-2" />Project dashboard</Link></Button>
           </div>
-          {operations.isLoading ? <div className="p-4"><Skeleton className="h-20 w-full" /></div>
-            : operations.error ? <div className="p-4"><ErrorState error={operations.error} onRetry={() => operations.refetch()} /></div>
-            : !operations.data?.operations?.length ? <div className="p-6"><EmptyState title="No recent operations" description="Once you act on the project, operations will appear here." /></div>
+          {!projectList.length ? <div className="p-6"><EmptyState title="No projects" description="No projects are available for this workspace or API key." /></div>
             : (
               <ul className="divide-y divide-border">
-                {operations.data.operations.slice(0, 8).map((op: any) => (
-                  <li key={op.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                    <StatusDot status={op.status} />
+                {projectList.slice(0, 8).map((project: any) => (
+                  <li key={project.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
                     <div className="min-w-0 flex-1">
-                      <div className="truncate"><span className="mono text-xs">{op.action}</span></div>
-                      <div className="text-[11px] text-muted-foreground truncate">{op.status}{op.error ? ` · ${op.error}` : ""}</div>
+                      <div className="font-medium truncate">{project.name}</div>
+                      <div className="text-[11px] text-muted-foreground truncate mono">{project.id}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">{project.region_id} · PostgreSQL {project.pg_version ?? "—"}</div>
                     </div>
-                    <div className="text-[11px] text-muted-foreground shrink-0">
-                      {op.updated_at ? formatDistanceToNow(new Date(op.updated_at), { addSuffix: true }) : ""}
-                    </div>
+                    <Button asChild variant="ghost" size="sm" onClick={() => { if (!selectedOrganizationId) setSelectedOrganizationId(DEFAULT_WORKSPACE_ID); setSelectedProjectId(project.id); playUiSound("nav"); }}>
+                      <Link to="/project/dashboard">Open</Link>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -219,19 +159,46 @@ export default function Dashboard() {
 
         <div className="hairline rounded-lg bg-card">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <div className="flex items-center gap-2 text-sm font-medium"><Cable className="size-4" /> Endpoints</div>
+            <div className="flex items-center gap-2 text-sm font-medium"><Activity className="size-4" /> Recent commits / activity</div>
           </div>
-          {endpoints.isLoading ? <div className="p-4"><Skeleton className="h-20 w-full" /></div>
-            : endpoints.error ? <div className="p-4"><ErrorState error={endpoints.error} onRetry={() => endpoints.refetch()} /></div>
-            : !endpoints.data?.endpoints?.length ? <div className="p-6"><EmptyState title="No endpoints" description="Endpoints provide connection URLs for your branches." /></div>
+          {loadingOperations ? <div className="p-4"><Skeleton className="h-20 w-full" /></div>
+            : !allOperations.length ? <div className="p-6"><EmptyState title="No recent activity" description="Neon exposes project operations here; commit-style activity appears when returned by the API." /></div>
             : (
               <ul className="divide-y divide-border">
-                {endpoints.data.endpoints.map((ep: any) => (
-                  <li key={ep.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                    <StatusDot status={ep.current_state} />
+                {allOperations.slice(0, 8).map((op: any) => (
+                  <li key={`${op.project_id}-${op.id}`} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                    <StatusDot status={op.status} />
                     <div className="min-w-0 flex-1">
-                      <div className="mono text-xs truncate">{ep.host}</div>
-                      <div className="text-[11px] text-muted-foreground">{ep.type} · {ep.current_state}{ep.pending_state ? ` → ${ep.pending_state}` : ""}</div>
+                      <div className="truncate"><span className="mono text-xs">{op.action}</span></div>
+                      <div className="text-[11px] text-muted-foreground truncate">{op.project_name || op.project_id} · {op.status}</div>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground shrink-0">
+                      {newestTimestamp(op) ? formatDistanceToNow(new Date(newestTimestamp(op)), { addSuffix: true }) : ""}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+        </div>
+
+        <div className="hairline rounded-lg bg-card md:col-span-2">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+            <div className="flex items-center gap-2 text-sm font-medium"><GitBranch className="size-4" /> Latest branches</div>
+            <Button asChild size="sm" variant="outline"><Link to="/branches"><TerminalSquare className="size-4 mr-2" />Manage branches</Link></Button>
+          </div>
+          {loadingBranches ? <div className="p-4"><Skeleton className="h-20 w-full" /></div>
+            : !recentBranches.length ? <div className="p-6"><EmptyState title="No branches" description="Branches will appear here after project branch data is available." /></div>
+            : (
+              <ul className="divide-y divide-border">
+                {recentBranches.map((branch: any) => (
+                  <li key={`${branch.project_id}-${branch.id}`} className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[1fr_auto_auto] md:items-center">
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{branch.name}{branch.default ? <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">default</span> : null}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">{branch.project_name || branch.project_id}</div>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mono truncate">{branch.id}</div>
+                    <div className="text-[11px] text-muted-foreground md:text-right">
+                      {newestTimestamp(branch) ? formatDistanceToNow(new Date(newestTimestamp(branch)), { addSuffix: true }) : "—"}
                     </div>
                   </li>
                 ))}

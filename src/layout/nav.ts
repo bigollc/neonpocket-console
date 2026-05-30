@@ -18,6 +18,7 @@ export const NAV: NavItem[] = [
   { to: "/organizations", label: "Organizations", icon: Building2, section: "account" },
   { to: "/settings", label: "Settings", icon: Settings, section: "account" },
   // PROJECT
+  { to: "/project/dashboard", label: "Dashboard", icon: LayoutDashboard, section: "project", requires: "project" },
   { to: "/branches", label: "Branches", icon: GitBranch, section: "project", requires: "project" },
   { to: "/integrations", label: "Integrations", icon: Plug, section: "project", requires: "project" },
   { to: "/auth", label: "Auth", icon: Shield, section: "project", requires: "project" },
