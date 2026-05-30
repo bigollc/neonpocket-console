@@ -20,7 +20,7 @@ function Row({ title, desc, children }: { title: string; desc?: string; children
         <div className="text-sm font-medium">{title}</div>
         {desc && <div className="text-xs text-muted-foreground mt-0.5">{desc}</div>}
       </div>
-      <div className="min-w-0 max-w-[60%] shrink-0 text-right">{children}</div>
+      <div className="min-w-0 max-w-[62%] shrink-0 text-right">{children}</div>
     </div>
   );
 }
@@ -57,6 +57,19 @@ function accountTypeLabel({ selectedOrganizationId, user, currentUserFailed }: {
   return "Connected API key";
 }
 
+function organizationRole(org: any) {
+  return firstText(
+    org?.role,
+    org?.org_role,
+    org?.organization_role,
+    org?.membership?.role,
+    org?.member?.role,
+    org?.permissions?.role,
+    org?.is_admin ? "admin" : "",
+    org?.is_owner ? "owner" : "",
+  );
+}
+
 export default function Settings() {
   const { apiKey, settings, updateSettings, signOut, forgetStoredKey, hasStoredVault, diagnostics, clearDiagnostics, clearLocalCache, refreshVaultState, selectedOrganizationId, playUiSound } = useApp();
   const navigate = useNavigate();
@@ -70,9 +83,13 @@ export default function Settings() {
   const email = userEmail(user);
   const userName = userNameFromPayload(user, email);
   const accountPlan = firstText(activeOrg?.plan, selectedOrgFromList?.plan, user?.plan);
-  const accountRole = firstText(activeOrg?.role, activeOrg?.org_role, activeOrg?.membership?.role, selectedOrgFromList?.role, user?.role);
   const accountType = accountTypeLabel({ selectedOrganizationId, user, currentUserFailed: !!currentUser.error });
   const selectedWorkspaceName = activeOrg?.name || activeOrg?.handle || selectedOrganizationId || "No organization selected";
+  const organizationRoles = useMemo(() => (organizations.data?.organizations || []).map((org: any) => ({
+    id: org.id,
+    name: org.name || org.handle || org.id,
+    role: organizationRole(org) || "not exposed",
+  })), [organizations.data?.organizations]);
   const lastFailed = diagnostics.find(d => !d.ok);
 
   const [usesPassphrase, setUsesPassphrase] = useState(false);
@@ -247,8 +264,15 @@ export default function Settings() {
         <Row title="Neon plan" desc="Shown from the selected organization detail when Neon exposes it through the API.">
           <span className="text-sm mono text-muted-foreground">{organizationDetail.isLoading ? "loading…" : planLabel(accountPlan)}</span>
         </Row>
-        <Row title="Organization role" desc="Admin/member/owner role when returned by the organization APIs.">
-          <span className="text-sm mono text-muted-foreground">{organizationDetail.isLoading ? "loading…" : accountRole || "not exposed by API"}</span>
+        <Row title="Organization roles" desc="All organizations returned by Neon and the membership role exposed for each one.">
+          <div className="space-y-1 text-right">
+            {organizations.isLoading ? <span className="text-sm mono text-muted-foreground">loading…</span> : organizationRoles.length ? organizationRoles.map(org => (
+              <div key={org.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 text-xs">
+                <span className="truncate text-muted-foreground">{org.name}</span>
+                <span className="mono text-foreground">{org.role}</span>
+              </div>
+            )) : <span className="text-sm mono text-muted-foreground">not exposed by API</span>}
+          </div>
         </Row>
         <Row title="Active organization">
           <div className="space-y-0.5">
@@ -277,7 +301,7 @@ export default function Settings() {
             <SelectContent><SelectItem value="full">Full</SelectItem><SelectItem value="reduced">Reduced</SelectItem></SelectContent>
           </Select>
         </Row>
-        <Row title="Interface sounds" desc="Minimal Web Audio feedback for taps, navigation, inputs, and confirmations.">
+        <Row title="Interface sounds" desc="Tap feedback with Web Audio plus an HTML audio fallback for mobile Safari.">
           <div className="flex items-center gap-2 justify-end">
             <Button variant="ghost" size="icon" className="size-8" onClick={() => playUiSound("enabled")} disabled={!settings.sounds} aria-label="Test sound">
               <Volume2 className="size-4" />
@@ -320,9 +344,7 @@ export default function Settings() {
       <div className="hairline rounded-lg p-4 bg-card mt-4">
         <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">API & Cloud profile</div>
         <Row title="API transport" desc="Locked to Cloudflare Worker proxy because direct browser requests are blocked by Neon CORS/preflight in production browsers.">
-          <div className="inline-flex items-center rounded-md border bg-muted/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground cursor-not-allowed select-none">
-            Proxy only
-          </div>
+          <div className="inline-flex items-center rounded-md border bg-muted/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground cursor-not-allowed select-none">Proxy only</div>
         </Row>
         <Row title="Cloud profile sync" desc="Optionally store profile metadata, settings, IP, user agent, and key hash/hint in Cloudflare D1. The Neon API key itself is not stored.">
           <Switch checked={settings.cloudProfileSync} onCheckedChange={toggleCloudProfileSync} />
@@ -335,9 +357,7 @@ export default function Settings() {
                 {cloudSyncLabel}{cloudSyncStatus?.at ? ` · ${new Date(cloudSyncStatus.at).toLocaleString()}` : ""}
               </div>
               {(cloudSyncStatus?.reason || cloudSyncStatus?.message) && (
-                <div className="text-[11px] text-muted-foreground mt-1 break-words mono">
-                  {cloudSyncStatus.reason || cloudSyncStatus.message}
-                </div>
+                <div className="text-[11px] text-muted-foreground mt-1 break-words mono">{cloudSyncStatus.reason || cloudSyncStatus.message}</div>
               )}
             </div>
             <Button size="sm" variant="outline" onClick={() => void runCloudProfileSync("manual")} disabled={!settings.cloudProfileSync || !apiKey || cloudSyncBusy}>
@@ -367,9 +387,7 @@ export default function Settings() {
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <Input type="password" value={passphrase} onChange={e => setPassphrase(e.target.value)} placeholder="Current passphrase" autoComplete="current-password" />
-              <Button variant="outline" onClick={removePassphrase} disabled={!passphrase || removingPassphrase} className="sm:w-44">
-                {removingPassphrase ? "Removing…" : "Remove"}
-              </Button>
+              <Button variant="outline" onClick={removePassphrase} disabled={!passphrase || removingPassphrase} className="sm:w-44">{removingPassphrase ? "Removing…" : "Remove"}</Button>
             </div>
           </div>
         )}
@@ -403,22 +421,16 @@ export default function Settings() {
         </Row>
         <Row title="Recent requests">
           <div className="flex items-center justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={copyDiagnostics} disabled={diagnostics.length === 0}>
-              <ClipboardCopy className="size-3.5 mr-1.5" />Copy
-            </Button>
-            <Button variant={confirmClearLogs ? "destructive" : "ghost"} size="sm" onClick={clearLogsWithConfirm} disabled={diagnostics.length === 0}>
-              {confirmClearLogs ? "Confirm clear" : "Clear log"}
-            </Button>
+            <Button variant="ghost" size="sm" onClick={copyDiagnostics} disabled={diagnostics.length === 0}><ClipboardCopy className="size-3.5 mr-1.5" />Copy</Button>
+            <Button variant={confirmClearLogs ? "destructive" : "ghost"} size="sm" onClick={clearLogsWithConfirm} disabled={diagnostics.length === 0}>{confirmClearLogs ? "Confirm clear" : "Clear log"}</Button>
           </div>
         </Row>
         <div className="mt-2 max-h-56 overflow-auto hairline rounded-md text-[11px] mono">
-          {diagnostics.length === 0 ? <div className="p-3 text-muted-foreground">No requests yet.</div> :
-            diagnostics.map((d, i) => (
-              <div key={i} className={`px-2 py-1 border-b last:border-b-0 border-border flex gap-2 min-w-0 ${d.ok ? "" : "text-destructive"}`}>
-                <span className="w-12 shrink-0">{d.status}</span><span className="w-12 shrink-0">{d.ms}ms</span><span className="min-w-0 break-words">{d.route}</span>
-              </div>
-            ))
-          }
+          {diagnostics.length === 0 ? <div className="p-3 text-muted-foreground">No requests yet.</div> : diagnostics.map((d, i) => (
+            <div key={i} className={`px-2 py-1 border-b last:border-b-0 border-border flex gap-2 min-w-0 ${d.ok ? "" : "text-destructive"}`}>
+              <span className="w-12 shrink-0">{d.status}</span><span className="w-12 shrink-0">{d.ms}ms</span><span className="min-w-0 break-words">{d.route}</span>
+            </div>
+          ))}
         </div>
       </div>
     </Page>
