@@ -4,6 +4,28 @@ NeonPocket Console can run without any application database. The default securit
 
 An optional Cloudflare D1 database can be bound to the Worker when you want lightweight app profile and audit records.
 
+## Current project binding
+
+The app Worker expects the D1 binding name to be exactly:
+
+```txt
+DB
+```
+
+The root `wrangler.jsonc` includes a D1 binding placeholder:
+
+```jsonc
+"d1_databases": [
+  {
+    "binding": "DB",
+    "database_name": "neon",
+    "database_id": "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID"
+  }
+]
+```
+
+Before deploy, replace `REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID` with the real D1 database id from Cloudflare. Do not change the `binding` value unless you also update the Worker code.
+
 ## What is stored
 
 When `Settings -> API & Cloud profile -> Cloud profile sync` is enabled, the app can store:
@@ -29,7 +51,7 @@ The raw Neon API key is also not stored in Worker environment variables. It rema
 ## Create a D1 database
 
 ```bash
-npx wrangler d1 create neonpocket-profile
+npx wrangler d1 create neon
 ```
 
 Cloudflare returns a binding block similar to:
@@ -39,7 +61,7 @@ Cloudflare returns a binding block similar to:
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "neonpocket-profile",
+      "database_name": "neon",
       "database_id": "<database-id-from-cloudflare>"
     }
   ]
@@ -56,13 +78,11 @@ Add this to the root `wrangler.jsonc` after replacing the database id:
 "d1_databases": [
   {
     "binding": "DB",
-    "database_name": "neonpocket-profile",
+    "database_name": "neon",
     "database_id": "<database-id-from-cloudflare>"
   }
 ]
 ```
-
-Do not commit a fake database id. If you do not want D1 yet, leave the binding out. The app will continue to work.
 
 ## Schema
 

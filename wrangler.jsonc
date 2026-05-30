@@ -11,5 +11,12 @@
   "vars": {
     "ALLOWED_ORIGINS": "",
     "NEON_BASE_URL": "https://console.neon.tech/api/v2"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "neon",
+      "database_id": "fb4426d9-6d44-4946-b7d3-ff5daf97a34c"
+    }
+  ]
 }
