@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppProvider, useApp } from "@/state/AppContext";
 import { Shell } from "@/layout/Shell";
 import Connect from "@/pages/Connect";
+import Legal from "@/pages/Legal";
 import Dashboard from "@/pages/Dashboard";
 import ProjectDashboard from "@/pages/ProjectDashboard";
 import Organizations from "@/pages/Organizations";
@@ -42,6 +43,9 @@ const App = () => (
         <AppProvider>
           <Routes>
             <Route path="/connect" element={<Connect />} />
+            <Route path="/terms" element={<Legal />} />
+            <Route path="/privacy" element={<Legal />} />
+            <Route path="/cookies" element={<Legal />} />
             <Route path="/diagnostics" element={<Diagnostics />} />
             <Route element={<Protected><Shell /></Protected>}>
               <Route index element={<Navigate to="/dashboard" replace />} />
