@@ -64,7 +64,7 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
   const workspace = workspaces.find(w => w.id === selectedOrganizationId);
   const proj = selectedOrganizationId ? projects.data?.projects?.find((p: any) => p.id === selectedProjectId) : undefined;
   const br = selectedOrganizationId && selectedProjectId ? branches.data?.branches?.find((b: any) => b.id === selectedBranchId) : undefined;
-  const selectedItemClass = "bg-accent text-accent-foreground";
+  const selectedItemClass = "!bg-accent !text-accent-foreground";
 
   return (
     <div className={cn("flex items-center gap-1.5", compact && "scale-95 origin-left")}>
