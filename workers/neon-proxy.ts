@@ -78,6 +78,10 @@ function clientIp(request: Request) {
   return request.headers.get("CF-Connecting-IP") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
 }
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "Unknown error");
+}
+
 function normalizeProfile(body: AppProfileBody) {
   const email = String(body.email || "").slice(0, 320);
   const keyHash = String(body.keyHash || "").slice(0, 128);
@@ -96,8 +100,17 @@ function normalizeProfile(body: AppProfileBody) {
   };
 }
 
+async function runOptionalSchemaPatch(db: any, sql: string) {
+  try {
+    await db.prepare(sql).run();
+  } catch {
+    // Ignore duplicate-column or unsupported patch errors. The primary CREATE TABLE
+    // statements below are the source of truth for fresh D1 databases.
+  }
+}
+
 async function ensureProfileSchema(db: any) {
-  await db.exec(`
+  await db.prepare(`
     CREATE TABLE IF NOT EXISTS app_profiles (
       user_id TEXT PRIMARY KEY,
       email TEXT,
@@ -112,7 +125,10 @@ async function ensureProfileSchema(db: any) {
       last_ip TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
-    );
+    )
+  `).run();
+
+  await db.prepare(`
     CREATE TABLE IF NOT EXISTS app_audit_events (
       id TEXT PRIMARY KEY,
       user_id TEXT,
@@ -120,8 +136,12 @@ async function ensureProfileSchema(db: any) {
       ip TEXT,
       user_agent TEXT,
       created_at TEXT NOT NULL
-    );
-  `);
+    )
+  `).run();
+
+  await runOptionalSchemaPatch(db, "ALTER TABLE app_profiles ADD COLUMN last_ip TEXT");
+  await runOptionalSchemaPatch(db, "ALTER TABLE app_profiles ADD COLUMN language TEXT");
+  await runOptionalSchemaPatch(db, "ALTER TABLE app_profiles ADD COLUMN timezone TEXT");
 }
 
 async function handleAppProfile(request: Request, env: Env) {
@@ -141,53 +161,64 @@ async function handleAppProfile(request: Request, env: Env) {
   try {
     body = await request.json();
   } catch {
-    return json({ error: "Invalid JSON body" }, 400, cors);
+    return json({ ok: false, stored: false, error: "Invalid JSON body" }, 400, cors);
   }
 
   const profile = normalizeProfile(body);
   const now = new Date().toISOString();
   const ip = clientIp(request);
 
-  await ensureProfileSchema(env.DB);
-  await env.DB.prepare(`
-    INSERT INTO app_profiles (
-      user_id, email, user_name, neon_key_hash, neon_key_hint, device_auth_enabled,
-      settings_json, user_agent, language, timezone, last_ip, created_at, updated_at
-    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
-    ON CONFLICT(user_id) DO UPDATE SET
-      email=excluded.email,
-      user_name=excluded.user_name,
-      neon_key_hash=excluded.neon_key_hash,
-      neon_key_hint=excluded.neon_key_hint,
-      device_auth_enabled=excluded.device_auth_enabled,
-      settings_json=excluded.settings_json,
-      user_agent=excluded.user_agent,
-      language=excluded.language,
-      timezone=excluded.timezone,
-      last_ip=excluded.last_ip,
-      updated_at=excluded.updated_at
-  `).bind(
-    profile.userId,
-    profile.email,
-    profile.userName,
-    profile.keyHash,
-    profile.keyHint,
-    profile.deviceAuthEnabled,
-    profile.settingsJson,
-    profile.userAgent,
-    profile.language,
-    profile.timezone,
-    ip,
-    now,
-    now,
-  ).run();
+  try {
+    await ensureProfileSchema(env.DB);
 
-  await env.DB.prepare(`
-    INSERT INTO app_audit_events (id, user_id, event, ip, user_agent, created_at)
-    VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-  `).bind(crypto.randomUUID(), profile.userId, "profile_synced", ip, profile.userAgent, now).run();
+    await env.DB.prepare(`
+      INSERT INTO app_profiles (
+        user_id, email, user_name, neon_key_hash, neon_key_hint, device_auth_enabled,
+        settings_json, user_agent, language, timezone, last_ip, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET
+        email=excluded.email,
+        user_name=excluded.user_name,
+        neon_key_hash=excluded.neon_key_hash,
+        neon_key_hint=excluded.neon_key_hint,
+        device_auth_enabled=excluded.device_auth_enabled,
+        settings_json=excluded.settings_json,
+        user_agent=excluded.user_agent,
+        language=excluded.language,
+        timezone=excluded.timezone,
+        last_ip=excluded.last_ip,
+        updated_at=excluded.updated_at
+    `).bind(
+      profile.userId,
+      profile.email,
+      profile.userName,
+      profile.keyHash,
+      profile.keyHint,
+      profile.deviceAuthEnabled,
+      profile.settingsJson,
+      profile.userAgent,
+      profile.language,
+      profile.timezone,
+      ip,
+      now,
+      now,
+    ).run();
 
-  return json({ ok: true, stored: true }, 200, cors);
+    await env.DB.prepare(`
+      INSERT INTO app_audit_events (id, user_id, event, ip, user_agent, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(crypto.randomUUID(), profile.userId, "profile_synced", ip, profile.userAgent, now).run();
+
+    return json({ ok: true, stored: true, profile_id: profile.userId, at: now }, 200, cors);
+  } catch (error) {
+    return json({
+      ok: false,
+      stored: false,
+      error: "D1 profile sync failed",
+      detail: errorMessage(error),
+      hint: "Check the DB binding, database id, and whether old tables need a manual migration/drop if their schema differs.",
+    }, 500, cors);
+  }
 }
 
 async function handleNeonProxy(request: Request, env: Env) {
