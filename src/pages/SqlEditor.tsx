@@ -63,13 +63,15 @@ export default function SqlEditor() {
     <Page>
       <PageHeader title="SQL Editor" description="Compose SQL and Data API requests for the selected branch." />
       <Tabs defaultValue="scratch">
-        <TabsList className="flex flex-wrap">
-          <TabsTrigger value="scratch">Scratch SQL</TabsTrigger>
-          <TabsTrigger value="snippets">Snippets</TabsTrigger>
-          <TabsTrigger value="rls">RLS Helper</TabsTrigger>
-          <TabsTrigger value="rest">Data API Translator</TabsTrigger>
-          <TabsTrigger value="history" disabled={!settings.localHistory}>History</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="inline-flex w-max min-w-full flex-nowrap justify-start">
+            <TabsTrigger value="scratch" className="whitespace-nowrap">Scratch SQL</TabsTrigger>
+            <TabsTrigger value="snippets" className="whitespace-nowrap">Snippets</TabsTrigger>
+            <TabsTrigger value="rls" className="whitespace-nowrap">RLS Helper</TabsTrigger>
+            <TabsTrigger value="rest" className="whitespace-nowrap">Data API Translator</TabsTrigger>
+            <TabsTrigger value="history" disabled={!settings.localHistory} className="whitespace-nowrap">History</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="scratch" className="space-y-3">
           <Textarea value={sql} onChange={e => setSql(e.target.value)} className="font-mono text-sm min-h-[260px]" />

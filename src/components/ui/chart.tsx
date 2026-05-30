@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: "", dark: ".dark" } as const;
+const SAFE_CSS_COLOR = /^(#[0-9a-f]{3,8}|(?:rgb|hsl)a?\([0-9.%\s,+-]+\)|[a-z]+|var\(--[a-z0-9_-]+\))$/i;
 
 export type ChartConfig = {
   [k in string]: {
@@ -37,7 +38,7 @@ const ChartContainer = React.forwardRef<
   }
 >(({ id, className, children, config, ...props }, ref) => {
   const uniqueId = React.useId();
-  const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`;
+  const chartId = `chart-${cssIdentifier(id || uniqueId.replace(/:/g, ""))}`;
 
   return (
     <ChartContext.Provider value={{ config }}>
@@ -75,7 +76,9 @@ ${prefix} [data-chart=${id}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
     const color = itemConfig.theme?.[theme as keyof typeof itemConfig.theme] || itemConfig.color;
-    return color ? `  --color-${key}: ${color};` : null;
+    const safeKey = cssIdentifier(key);
+    const safeColor = typeof color === "string" && SAFE_CSS_COLOR.test(color.trim()) ? color.trim() : "";
+    return safeKey && safeColor ? `  --color-${safeKey}: ${safeColor};` : null;
   })
   .join("\n")}
 }
@@ -86,6 +89,11 @@ ${colorConfig
     />
   );
 };
+
+
+function cssIdentifier(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
 
 const ChartTooltip = RechartsPrimitive.Tooltip;
 

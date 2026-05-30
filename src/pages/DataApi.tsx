@@ -51,6 +51,7 @@ export default function DataApi() {
   async function send() {
     if (!apiUrl) return toast.error("Data API URL not available");
     if (!jwt) return toast.error("JWT is required");
+    if (!isSafeDataApiPath(path)) return toast.error("Path must start with / and cannot contain traversal, query/hash, or URL syntax");
     setSending(true); setResp(null);
     try {
       const u = new URL(apiUrl.replace(/\/$/, "") + path);
@@ -141,3 +142,22 @@ export default function DataApi() {
 }
 
 function tryPretty(s: string) { try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; } }
+
+
+function hasUnsafeDataApiPathCharacter(value: string) {
+  return Array.from(value).some(char => {
+    const code = char.charCodeAt(0);
+    return code <= 31 || code === 127 || char === "\\" || char === "?" || char === "#";
+  });
+}
+
+function isSafeDataApiPath(value: string) {
+  if (!value.startsWith("/")) return false;
+  if (hasUnsafeDataApiPathCharacter(value) || value.includes("://")) return false;
+  try {
+    const decoded = decodeURIComponent(value);
+    return !(hasUnsafeDataApiPathCharacter(decoded) || decoded.includes("://") || decoded.split("/").some(segment => segment === "." || segment === ".."));
+  } catch {
+    return false;
+  }
+}

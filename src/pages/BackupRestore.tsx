@@ -10,6 +10,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Database, History } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { callNeon } from "@/lib/neon/client";
+import { neonPathSegment as seg } from "@/lib/neon/path";
 import { toast } from "sonner";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
@@ -25,7 +26,7 @@ export default function BackupRestore() {
   const restorePit = useMutation({
     mutationFn: async () => {
       const body = { source_branch_id: selectedBranchId, source_timestamp: new Date(ts).toISOString(), preserve_under_name: `${branch?.name || "branch"}-pre-restore` };
-      return callNeon(`/projects/${selectedProjectId}/branches/${selectedBranchId}/restore`, { ...ctx as any, method: "POST", body });
+      return callNeon(`/projects/${seg(selectedProjectId)}/branches/${seg(selectedBranchId)}/restore`, { ...ctx as any, method: "POST", body });
     },
     onSuccess: () => { toast.success("Restore scheduled"); qc.invalidateQueries({ queryKey: ["operations", selectedProjectId] }); setErr(null); },
     onError: (e: any) => { setErr(e); toast.error("Restore failed", { description: `${e.status} · ${e.message}` }); },
@@ -41,9 +42,9 @@ export default function BackupRestore() {
         <p className="text-xs text-muted-foreground">
           This calls <span className="mono">POST /projects/{`{id}`}/branches/{`{id}`}/restore</span>. Availability and retention depend on your plan and branch settings.
         </p>
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 max-w-full sm:max-w-xs">
           <Label>Restore to (local time)</Label>
-          <Input type="datetime-local" value={ts} onChange={e => setTs(e.target.value)} />
+          <Input type="datetime-local" value={ts} onChange={e => setTs(e.target.value)} className="w-full max-w-full min-w-0" />
         </div>
         <AlertDialog>
           <AlertDialogTrigger asChild><Button variant="destructive"><Database className="size-4 mr-2" />Restore branch</Button></AlertDialogTrigger>

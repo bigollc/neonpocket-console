@@ -52,7 +52,7 @@ export default function Tables() {
     queryKey: ["rows", apiUrl, selectedTable, jwt],
     enabled: !!apiUrl && !!selectedTable && !!jwt,
     queryFn: async ({ signal }) => {
-      const res = await fetch(`${apiUrl!.replace(/\/$/, "")}/${selectedTable}?limit=50`, {
+      const res = await fetch(`${apiUrl!.replace(/\/$/, "")}/${encodeURIComponent(selectedTable)}?limit=50`, {
         headers: { Authorization: `Bearer ${jwt}`, Accept: "application/json" }, signal,
       });
       const text = await res.text();
