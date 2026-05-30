@@ -150,7 +150,7 @@ export function Shell() {
           </Button>
         </header>
 
-        <main className="flex-1 min-w-0 pb-20 md:pb-6">
+        <main className={cn("flex-1 min-w-0 md:pb-6", settings.mobileBottomNav ? "pb-20" : "pb-6")}>
           <AnimatePresence mode="wait">
             <motion.div key={location.pathname} variants={variants} initial="initial" animate="animate" exit="exit" transition={{ duration: 0.18 }}>
               <Outlet />
@@ -159,23 +159,25 @@ export function Shell() {
         </main>
 
         {/* Bottom mobile nav */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 glass border-t border-border safe-pb">
-          <div className="grid w-full" style={{ gridTemplateColumns: `repeat(${Math.max(1, mobileItems.length)}, minmax(0, 1fr))` }}>
-            {mobileItems.map(item => {
-              const active = location.pathname.startsWith(item.to);
-              return (
-                <button key={item.to} onClick={() => { playUiSound("nav"); navigate(item.to); }} className={cn(
-                  "relative flex min-w-0 flex-col items-center justify-center gap-0.5 py-2 text-[10px]",
-                  active ? "text-foreground" : "text-muted-foreground"
-                )}>
-                  <item.icon className="size-5" />
-                  <span className="truncate max-w-full px-1">{item.label}</span>
-                  {active && <span className="absolute -bottom-[1px] block h-0.5 w-8 rounded-full bg-foreground" />}
-                </button>
-              );
-            })}
-          </div>
-        </nav>
+        {settings.mobileBottomNav && (
+          <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 glass border-t border-border safe-pb">
+            <div className="grid w-full" style={{ gridTemplateColumns: `repeat(${Math.max(1, mobileItems.length)}, minmax(0, 1fr))` }}>
+              {mobileItems.map(item => {
+                const active = location.pathname.startsWith(item.to);
+                return (
+                  <button key={item.to} onClick={() => { playUiSound("nav"); navigate(item.to); }} className={cn(
+                    "relative flex min-w-0 flex-col items-center justify-center gap-0.5 py-2 text-[10px]",
+                    active ? "text-foreground" : "text-muted-foreground"
+                  )}>
+                    <item.icon className="size-5" />
+                    <span className="truncate max-w-full px-1">{item.label}</span>
+                    {active && <span className="absolute -bottom-[1px] block h-0.5 w-8 rounded-full bg-foreground" />}
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+        )}
       </div>
 
       <CommandPalette />

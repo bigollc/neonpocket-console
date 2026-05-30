@@ -26,7 +26,6 @@ function Row({ title, desc, children }: { title: string; desc?: string; children
 }
 
 const CLOUD_SYNC_STATUS_KEY = "neonpocket.cloud-profile.last-sync.v1";
-
 type CloudSyncStatus = CloudProfileResult & { at: string };
 
 function readCloudSyncStatus(): CloudSyncStatus | null {
@@ -50,6 +49,7 @@ export default function Settings() {
   const email = userEmail(user);
   const userName = userNameFromPayload(user, email);
   const lastFailed = diagnostics.find(d => !d.ok);
+
   const [usesPassphrase, setUsesPassphrase] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [removingPassphrase, setRemovingPassphrase] = useState(false);
@@ -66,15 +66,13 @@ export default function Settings() {
     return `failed · ${cloudSyncStatus.status || "network"}`;
   }, [cloudSyncStatus]);
 
-  const diagnosticsText = useMemo(() => {
-    return diagnostics.map(d => [
-      d.status,
-      `${d.ms}ms`,
-      d.route,
-      d.ok ? "ok" : (d.errorMessage || "failed"),
-      d.ts,
-    ].join("\t")).join("\n");
-  }, [diagnostics]);
+  const diagnosticsText = useMemo(() => diagnostics.map(d => [
+    d.status,
+    `${d.ms}ms`,
+    d.route,
+    d.ok ? "ok" : (d.errorMessage || "failed"),
+    d.ts,
+  ].join("\t")).join("\n"), [diagnostics]);
 
   useEffect(() => {
     vaultUsesPassphrase().then(setUsesPassphrase).catch(() => setUsesPassphrase(false));
@@ -154,6 +152,7 @@ export default function Settings() {
         settings: {
           greetings: settings.greetings,
           sounds: settings.sounds,
+          mobileBottomNav: settings.mobileBottomNav,
           apiMode: "proxy",
           localHistory: settings.localHistory,
         },
@@ -235,6 +234,9 @@ export default function Settings() {
         <Row title="Greeting cards" desc="Show time-aware dashboard messages such as morning, day, evening, and night greetings.">
           <Switch checked={settings.greetings} onCheckedChange={v => updateSettings({ greetings: v })} />
         </Row>
+        <Row title="Mobile bottom bar" desc="Show the compact mobile tab bar. Disabled by default; the drawer remains the primary mobile navigation.">
+          <Switch checked={settings.mobileBottomNav} onCheckedChange={v => updateSettings({ mobileBottomNav: v })} />
+        </Row>
       </div>
 
       <div className="hairline rounded-lg p-4 bg-card mt-4">
@@ -310,13 +312,7 @@ export default function Settings() {
               <div className="text-xs text-muted-foreground mt-0.5">Enter the current passphrase once. The key will be re-encrypted for this device without a passphrase.</div>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
-              <Input
-                type="password"
-                value={passphrase}
-                onChange={e => setPassphrase(e.target.value)}
-                placeholder="Current passphrase"
-                autoComplete="current-password"
-              />
+              <Input type="password" value={passphrase} onChange={e => setPassphrase(e.target.value)} placeholder="Current passphrase" autoComplete="current-password" />
               <Button variant="outline" onClick={removePassphrase} disabled={!passphrase || removingPassphrase} className="sm:w-44">
                 {removingPassphrase ? "Removing…" : "Remove"}
               </Button>
