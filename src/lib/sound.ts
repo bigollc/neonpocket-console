@@ -3,86 +3,105 @@ type SoundName = "tap" | "soft" | "nav" | "success" | "warning" | "enabled";
 type BrowserAudioContext = AudioContext & { resume: () => Promise<void> };
 
 let ctx: BrowserAudioContext | null = null;
-let lastPlayed = 0;
-let unlocked = false;
+let masterGain: GainNode | null = null;
+let lastPlayedAt = 0;
+let primed = false;
 
-function audioContext() {
+function getAudioContext() {
   if (typeof window === "undefined") return null;
   const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
   if (!AudioCtx) return null;
-  if (!ctx) ctx = new AudioCtx();
+
+  if (!ctx) {
+    ctx = new AudioCtx();
+    masterGain = ctx.createGain();
+    masterGain.gain.value = 0.9;
+    masterGain.connect(ctx.destination);
+  }
+
   return ctx;
 }
 
 const profiles: Record<SoundName, { freq: number; endFreq?: number; duration: number; gain: number; type?: OscillatorType }> = {
-  tap: { freq: 820, endFreq: 540, duration: 0.075, gain: 0.055, type: "sine" },
-  soft: { freq: 520, endFreq: 430, duration: 0.055, gain: 0.032, type: "triangle" },
-  nav: { freq: 440, endFreq: 880, duration: 0.105, gain: 0.05, type: "sine" },
-  success: { freq: 660, endFreq: 1040, duration: 0.16, gain: 0.058, type: "sine" },
-  warning: { freq: 260, endFreq: 170, duration: 0.16, gain: 0.05, type: "triangle" },
-  enabled: { freq: 560, endFreq: 960, duration: 0.18, gain: 0.06, type: "sine" },
+  tap: { freq: 780, endFreq: 520, duration: 0.07, gain: 0.07, type: "sine" },
+  soft: { freq: 500, endFreq: 410, duration: 0.06, gain: 0.045, type: "triangle" },
+  nav: { freq: 460, endFreq: 900, duration: 0.11, gain: 0.075, type: "sine" },
+  success: { freq: 660, endFreq: 1080, duration: 0.16, gain: 0.08, type: "sine" },
+  warning: { freq: 270, endFreq: 160, duration: 0.17, gain: 0.075, type: "triangle" },
+  enabled: { freq: 560, endFreq: 980, duration: 0.18, gain: 0.085, type: "sine" },
 };
 
-export function unlockAudio() {
-  const ac = audioContext();
-  if (!ac) return;
-
-  if (ac.state === "suspended") {
-    // Do not await here. Safari/iOS requires this to be initiated directly from
-    // the same user gesture stack; awaiting can make the next oscillator silent.
-    void ac.resume().catch(() => undefined);
-  }
-
-  if (unlocked) return;
-  unlocked = true;
+export function primeAudio() {
+  const ac = getAudioContext();
+  if (!ac || primed) return;
 
   try {
-    const osc = ac.createOscillator();
-    const gain = ac.createGain();
-    const start = ac.currentTime;
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(0.00001, start + 0.015);
-    osc.frequency.setValueAtTime(440, start);
-    osc.connect(gain);
-    gain.connect(ac.destination);
-    osc.start(start);
-    osc.stop(start + 0.02);
+    const source = ac.createBufferSource();
+    source.buffer = ac.createBuffer(1, 1, 22050);
+    source.connect(masterGain || ac.destination);
+    source.start(0);
+    primed = true;
   } catch {
-    unlocked = false;
+    primed = false;
   }
 }
 
-export function playSound(name: SoundName = "tap") {
-  const nowTs = performance.now();
-  if (nowTs - lastPlayed < 24) return;
-  lastPlayed = nowTs;
-
-  const ac = audioContext();
+export function unlockAudio() {
+  const ac = getAudioContext();
   if (!ac) return;
-  unlockAudio();
-  if (ac.state === "suspended") return;
 
+  primeAudio();
+  if (ac.state === "suspended") {
+    void ac.resume().catch(() => undefined);
+  }
+}
+
+function scheduleTone(ac: BrowserAudioContext, name: SoundName) {
   const p = profiles[name];
-  const start = ac.currentTime + 0.002;
+  const destination = masterGain || ac.destination;
+  const start = ac.currentTime + 0.001;
+  const end = start + p.duration;
   const osc = ac.createOscillator();
   const gain = ac.createGain();
   const filter = ac.createBiquadFilter();
 
   osc.type = p.type || "sine";
   osc.frequency.setValueAtTime(p.freq, start);
-  if (p.endFreq) osc.frequency.exponentialRampToValueAtTime(Math.max(1, p.endFreq), start + p.duration);
+  if (p.endFreq) osc.frequency.exponentialRampToValueAtTime(Math.max(1, p.endFreq), end);
 
   filter.type = "lowpass";
-  filter.frequency.setValueAtTime(4200, start);
+  filter.frequency.setValueAtTime(4400, start);
 
   gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.exponentialRampToValueAtTime(p.gain, start + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, start + p.duration);
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, p.gain), start + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, end);
 
   osc.connect(filter);
   filter.connect(gain);
-  gain.connect(ac.destination);
+  gain.connect(destination);
 
   osc.start(start);
-  osc.stop(start + p.duration + 0.02);
+  osc.stop(end + 0.02);
+}
+
+export function playSound(name: SoundName = "tap") {
+  const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+  if (now - lastPlayedAt < 28) return;
+  lastPlayedAt = now;
+
+  const ac = getAudioContext();
+  if (!ac) return;
+
+  unlockAudio();
+
+  if (ac.state === "suspended") {
+    void ac.resume().then(() => scheduleTone(ac, name)).catch(() => undefined);
+    return;
+  }
+
+  try {
+    scheduleTone(ac, name);
+  } catch {
+    primed = false;
+  }
 }

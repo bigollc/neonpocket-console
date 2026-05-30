@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ApiMode } from "@/lib/neon/client";
 import { onDiagnostic, type DiagnosticEntry } from "@/lib/neon/client";
 import { hasVault, forgetKey } from "@/lib/vault";
-import { playSound, unlockAudio } from "@/lib/sound";
+import { playSound, primeAudio, unlockAudio } from "@/lib/sound";
 
 type Theme = "system" | "light" | "dark";
 type Motion = "full" | "reduced";
@@ -36,6 +36,8 @@ interface AppState {
   setSelectedBranchId: (id: string | null) => void;
   selectedDatabase: string | null;
   setSelectedDatabase: (n: string | null) => void;
+  resetPlatformContext: () => void;
+  resetProjectContext: () => void;
 
   settings: Settings;
   updateSettings: (s: Partial<Settings>) => void;
@@ -48,6 +50,7 @@ interface AppState {
 
 const SETTINGS_KEY = "neonpocket.settings.v1";
 const SELECT_KEY = "neonpocket.select.v1";
+const LEGACY_DEFAULT_WORKSPACE_ID = "__default_workspace__";
 
 const defaultSettings: Settings = {
   theme: "system",
@@ -71,7 +74,13 @@ function loadSettings(): Settings {
   }
 }
 function loadSelect() {
-  try { return JSON.parse(localStorage.getItem(SELECT_KEY) || "{}"); } catch { return {}; }
+  try {
+    const selected = JSON.parse(localStorage.getItem(SELECT_KEY) || "{}");
+    if (selected.organizationId === LEGACY_DEFAULT_WORKSPACE_ID) return {};
+    return selected;
+  } catch {
+    return {};
+  }
 }
 
 function applyTheme(t: Theme) {
@@ -144,22 +153,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!settings.sounds) return;
-    const onPointerDown = () => unlockAudio();
-    const onPointerUp = (event: PointerEvent) => {
+    const onPointerDown = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null;
-      if (!target) return;
-      if (target.closest("button,a,[role='button'],[data-radix-collection-item]")) playSound("tap");
+      unlockAudio();
+      if (target?.closest("button,a,[role='button'],[data-radix-collection-item]")) playSound("tap");
     };
     const onFocusIn = (event: FocusEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches("input,textarea,[role='combobox']")) playSound("soft");
     };
     document.addEventListener("pointerdown", onPointerDown, { passive: true });
-    document.addEventListener("pointerup", onPointerUp, { passive: true });
     document.addEventListener("focusin", onFocusIn);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("pointerup", onPointerUp);
       document.removeEventListener("focusin", onFocusIn);
     };
   }, [settings.sounds]);
@@ -167,8 +173,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const refreshVaultState = useCallback(async () => { setHasStoredVault(await hasVault()); }, []);
   useEffect(() => { refreshVaultState(); }, [refreshVaultState]);
 
+  const resetProjectContext = useCallback(() => {
+    setSelectedProjectIdState(null);
+    setSelectedBranchIdState(null);
+    setSelectedDatabase(null);
+  }, []);
+
+  const resetPlatformContext = useCallback(() => {
+    setSelectedOrganizationIdState(null);
+    setSelectedProjectIdState(null);
+    setSelectedBranchIdState(null);
+    setSelectedDatabase(null);
+  }, []);
+
   const setSelectedOrganizationId = useCallback((id: string | null) => {
-    setSelectedOrganizationIdState(id);
+    setSelectedOrganizationIdState(id === LEGACY_DEFAULT_WORKSPACE_ID ? null : id);
     setSelectedProjectIdState(null);
     setSelectedBranchIdState(null);
     setSelectedDatabase(null);
@@ -183,12 +202,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSelectedDatabase(null);
   }, []);
 
-  const setApiKey = useCallback((k: string | null) => setApiKeyState(k), []);
+  const setApiKey = useCallback((k: string | null) => {
+    setApiKeyState(k);
+    resetPlatformContext();
+  }, [resetPlatformContext]);
   const signOut = useCallback(() => {
     setApiKeyState(null);
-    setSelectedOrganizationIdState(null);
-    setSelectedProjectIdState(null); setSelectedBranchIdState(null); setSelectedDatabase(null);
-  }, []);
+    resetPlatformContext();
+  }, [resetPlatformContext]);
   const forgetStoredKey = useCallback(async () => {
     await forgetKey(); await refreshVaultState();
   }, [refreshVaultState]);
@@ -196,7 +217,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const updateSettings = useCallback((s: Partial<Settings>) => setSettings(prev => {
     const next = { ...prev, ...s, apiMode: "proxy" as ApiMode };
     if (!prev.sounds && next.sounds) {
-      unlockAudio();
+      primeAudio();
       playSound("enabled");
     }
     return next;
@@ -208,8 +229,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const clearLocalCache = useCallback(() => {
     localStorage.removeItem(SELECT_KEY);
     setDiagnostics([]);
-    setSelectedOrganizationIdState(null); setSelectedProjectIdState(null); setSelectedBranchIdState(null); setSelectedDatabase(null);
-  }, []);
+    resetPlatformContext();
+  }, [resetPlatformContext]);
 
   const value = useMemo<AppState>(() => ({
     apiKey, setApiKey, signOut,
@@ -218,9 +239,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     selectedProjectId, setSelectedProjectId,
     selectedBranchId, setSelectedBranchId,
     selectedDatabase, setSelectedDatabase,
+    resetPlatformContext, resetProjectContext,
     settings, updateSettings, playUiSound,
     diagnostics, clearDiagnostics, clearLocalCache,
-  }), [apiKey, hasStoredVault, selectedOrganizationId, selectedProjectId, selectedBranchId, selectedDatabase, settings, diagnostics, setApiKey, signOut, refreshVaultState, forgetStoredKey, setSelectedOrganizationId, setSelectedProjectId, setSelectedBranchId, updateSettings, playUiSound, clearDiagnostics, clearLocalCache]);
+  }), [apiKey, hasStoredVault, selectedOrganizationId, selectedProjectId, selectedBranchId, selectedDatabase, settings, diagnostics, setApiKey, signOut, refreshVaultState, forgetStoredKey, setSelectedOrganizationId, setSelectedProjectId, setSelectedBranchId, resetPlatformContext, resetProjectContext, updateSettings, playUiSound, clearDiagnostics, clearLocalCache]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

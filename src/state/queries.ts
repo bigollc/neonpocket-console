@@ -18,6 +18,14 @@ function ctxOf(apiKey: string | null, mode: ApiMode) {
   return { apiKey, mode };
 }
 
+function arrayFrom(payload: any, keys: string[]) {
+  for (const key of keys) {
+    if (Array.isArray(payload?.[key])) return payload[key];
+  }
+  if (Array.isArray(payload)) return payload;
+  return [];
+}
+
 export function normalizeUser(payload: any): NeonUser | null {
   return payload?.user ?? payload ?? null;
 }
@@ -56,14 +64,11 @@ export function useOrganizationsQuery() {
     queryFn: async ({ signal }) => {
       try {
         const data = await NeonService.listOrganizations({ ...ctxOf(apiKey, settings.apiMode), signal });
-        const organizations = (data.organizations || [])
+        const organizations = arrayFrom(data, ["organizations", "orgs", "items"])
           .map((org: any) => ({ ...org, id: workspaceId(org), name: workspaceName(org) }))
-          .filter((org: WorkspaceOption) => !!org.id);
+          .filter((org: WorkspaceOption) => !!org.id && org.id !== DEFAULT_WORKSPACE_ID);
         return { organizations };
       } catch (error: any) {
-        // Organization-scoped and project-scoped keys can authenticate and list
-        // projects while not being allowed to enumerate the user's orgs. Keep the
-        // workspace flow usable via the default, unfiltered projects workspace.
         if ([0, 401, 403, 404].includes(error?.status)) return { organizations: [], unavailable: error };
         throw error;
       }
@@ -84,24 +89,12 @@ export function useOrganizationQuery(orgId: string | null | undefined) {
 
 export function useProjectsQuery() {
   const { apiKey, settings, selectedOrganizationId } = useApp();
-  const hasExplicitOrganization = !!selectedOrganizationId && selectedOrganizationId !== DEFAULT_WORKSPACE_ID;
-  const orgId = hasExplicitOrganization ? selectedOrganizationId : null;
-  const workspaceKey = selectedOrganizationId || DEFAULT_WORKSPACE_ID;
+  const orgId = selectedOrganizationId && selectedOrganizationId !== DEFAULT_WORKSPACE_ID ? selectedOrganizationId : null;
 
   return useQuery<{ projects: any[] }, NormalizedError>({
-    queryKey: ["projects", workspaceKey, settings.apiMode],
-    enabled: !!apiKey,
-    queryFn: async ({ signal }) => {
-      const ctx = { ...ctxOf(apiKey, settings.apiMode), signal };
-      try {
-        return await NeonService.listProjects(ctx, orgId);
-      } catch (error: any) {
-        if (orgId && [0, 400, 401, 403, 404, 422].includes(error?.status)) {
-          return NeonService.listProjects(ctx, null);
-        }
-        throw error;
-      }
-    },
+    queryKey: ["projects", orgId || "no-organization", settings.apiMode],
+    enabled: !!apiKey && !!orgId,
+    queryFn: ({ signal }) => NeonService.listProjects({ ...ctxOf(apiKey, settings.apiMode), signal }, orgId),
     retry: (count, err) => !!err?.retryable && count < 2,
   });
 }
@@ -110,7 +103,7 @@ export function useBranchesQuery(projectId: string | null) {
   const { apiKey, settings, selectedOrganizationId } = useApp();
   return useQuery<{ branches: any[] }, NormalizedError>({
     queryKey: ["branches", selectedOrganizationId, projectId, settings.apiMode],
-    enabled: !!apiKey && !!selectedOrganizationId && !!projectId,
+    enabled: !!apiKey && !!selectedOrganizationId && selectedOrganizationId !== DEFAULT_WORKSPACE_ID && !!projectId,
     queryFn: ({ signal }) => NeonService.listBranches({ ...ctxOf(apiKey, settings.apiMode), signal }, projectId!),
   });
 }
@@ -119,7 +112,7 @@ export function useDatabasesQuery(projectId: string | null, branchId: string | n
   const { apiKey, settings, selectedOrganizationId } = useApp();
   return useQuery<{ databases: any[] }, NormalizedError>({
     queryKey: ["databases", selectedOrganizationId, projectId, branchId, settings.apiMode],
-    enabled: !!apiKey && !!selectedOrganizationId && !!projectId && !!branchId,
+    enabled: !!apiKey && !!selectedOrganizationId && selectedOrganizationId !== DEFAULT_WORKSPACE_ID && !!projectId && !!branchId,
     queryFn: ({ signal }) => NeonService.listDatabases({ ...ctxOf(apiKey, settings.apiMode), signal }, projectId!, branchId!),
   });
 }
@@ -128,7 +121,7 @@ export function useRolesQuery(projectId: string | null, branchId: string | null)
   const { apiKey, settings, selectedOrganizationId } = useApp();
   return useQuery<{ roles: any[] }, NormalizedError>({
     queryKey: ["roles", selectedOrganizationId, projectId, branchId, settings.apiMode],
-    enabled: !!apiKey && !!selectedOrganizationId && !!projectId && !!branchId,
+    enabled: !!apiKey && !!selectedOrganizationId && selectedOrganizationId !== DEFAULT_WORKSPACE_ID && !!projectId && !!branchId,
     queryFn: ({ signal }) => NeonService.listRoles({ ...ctxOf(apiKey, settings.apiMode), signal }, projectId!, branchId!),
   });
 }
@@ -137,7 +130,7 @@ export function useEndpointsQuery(projectId: string | null) {
   const { apiKey, settings, selectedOrganizationId } = useApp();
   return useQuery<{ endpoints: any[] }, NormalizedError>({
     queryKey: ["endpoints", selectedOrganizationId, projectId, settings.apiMode],
-    enabled: !!apiKey && !!selectedOrganizationId && !!projectId,
+    enabled: !!apiKey && !!selectedOrganizationId && selectedOrganizationId !== DEFAULT_WORKSPACE_ID && !!projectId,
     queryFn: ({ signal }) => NeonService.listEndpoints({ ...ctxOf(apiKey, settings.apiMode), signal }, projectId!),
   });
 }
@@ -146,7 +139,7 @@ export function useOperationsQuery(projectId: string | null, opts?: { pollInterv
   const { apiKey, settings, selectedOrganizationId } = useApp();
   return useQuery<{ operations: any[] }, NormalizedError>({
     queryKey: ["operations", selectedOrganizationId, projectId, settings.apiMode],
-    enabled: !!apiKey && !!selectedOrganizationId && !!projectId,
+    enabled: !!apiKey && !!selectedOrganizationId && selectedOrganizationId !== DEFAULT_WORKSPACE_ID && !!projectId,
     queryFn: ({ signal }) => NeonService.listOperations({ ...ctxOf(apiKey, settings.apiMode), signal }, projectId!),
     refetchInterval: (q) => {
       const ops = (q.state.data as any)?.operations || [];
@@ -193,11 +186,11 @@ export function useConsumptionHistoryQuery({ projectIds, orgId }: { projectIds?:
   ].join(",");
 
   return useQuery<any, NormalizedError>({
-    queryKey: ["consumption-history-v2", orgId || "default", ids.join(","), settings.apiMode],
-    enabled: !!apiKey && (!!orgId || ids.length > 0),
+    queryKey: ["consumption-history-v2", orgId || "no-organization", ids.join(","), settings.apiMode],
+    enabled: !!apiKey && !!orgId && ids.length > 0,
     queryFn: ({ signal }) => NeonService.consumptionHistoryProjectsV2({ ...ctxOf(apiKey, settings.apiMode), signal }, {
       org_id: orgId,
-      project_ids: ids.length ? ids.join(",") : undefined,
+      project_ids: ids.join(","),
       from: monthStartIso(),
       to: new Date().toISOString(),
       granularity: "monthly",
