@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ApiMode } from "@/lib/neon/client";
 import { onDiagnostic, type DiagnosticEntry } from "@/lib/neon/client";
 import { hasVault, forgetKey } from "@/lib/vault";
-import { playSound } from "@/lib/sound";
+import { playSound, unlockAudio } from "@/lib/sound";
 
 type Theme = "system" | "light" | "dark";
 type Motion = "full" | "reduced";
@@ -17,6 +17,7 @@ interface Settings {
   localHistory: boolean;
   greetings: boolean;
   cloudProfileSync: boolean;
+  mobileBottomNav: boolean;
 }
 
 interface AppState {
@@ -56,6 +57,7 @@ const defaultSettings: Settings = {
   localHistory: false,
   greetings: true,
   cloudProfileSync: false,
+  mobileBottomNav: false,
 };
 
 const Ctx = createContext<AppState | null>(null);
@@ -63,7 +65,7 @@ const Ctx = createContext<AppState | null>(null);
 function loadSettings(): Settings {
   try {
     const loaded = { ...defaultSettings, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")) };
-    return { ...loaded, apiMode: "proxy" };
+    return { ...loaded, apiMode: "proxy", mobileBottomNav: !!loaded.mobileBottomNav };
   } catch {
     return defaultSettings;
   }
@@ -142,18 +144,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!settings.sounds) return;
+    const onPointerDown = () => unlockAudio();
     const onPointerUp = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null;
       if (!target) return;
-      if (target.closest("button,a,[role='button'],[data-radix-collection-item]")) void playSound("tap");
+      if (target.closest("button,a,[role='button'],[data-radix-collection-item]")) playSound("tap");
     };
     const onFocusIn = (event: FocusEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.matches("input,textarea,[role='combobox']")) void playSound("soft");
+      if (target?.matches("input,textarea,[role='combobox']")) playSound("soft");
     };
+    document.addEventListener("pointerdown", onPointerDown, { passive: true });
     document.addEventListener("pointerup", onPointerUp, { passive: true });
     document.addEventListener("focusin", onFocusIn);
     return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("pointerup", onPointerUp);
       document.removeEventListener("focusin", onFocusIn);
     };
@@ -190,11 +195,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const updateSettings = useCallback((s: Partial<Settings>) => setSettings(prev => {
     const next = { ...prev, ...s, apiMode: "proxy" as ApiMode };
-    if (!prev.sounds && next.sounds) void playSound("enabled");
+    if (!prev.sounds && next.sounds) {
+      unlockAudio();
+      playSound("enabled");
+    }
     return next;
   }), []);
   const playUiSound = useCallback((sound: UiSound = "tap") => {
-    if (settings.sounds) void playSound(sound);
+    if (settings.sounds) playSound(sound);
   }, [settings.sounds]);
   const clearDiagnostics = useCallback(() => setDiagnostics([]), []);
   const clearLocalCache = useCallback(() => {
