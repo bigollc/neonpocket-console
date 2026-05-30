@@ -8,7 +8,7 @@ import { Lock, LogOut, Moon, Sun } from "lucide-react";
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
-  const { signOut, settings, updateSettings, forgetStoredKey, selectedOrganizationId, selectedProjectId, selectedBranchId } = useApp();
+  const { signOut, settings, updateSettings, forgetStoredKey, selectedOrganizationId, selectedProjectId, selectedBranchId, resetPlatformContext, playUiSound } = useApp();
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -27,7 +27,12 @@ export function CommandPalette() {
     return true;
   });
 
-  const go = (to: string) => { setOpen(false); navigate(to); };
+  const go = (to: string) => {
+    if (to === "/dashboard") resetPlatformContext();
+    playUiSound("nav");
+    setOpen(false);
+    navigate(to);
+  };
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
