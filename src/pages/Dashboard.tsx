@@ -1,14 +1,14 @@
-import { useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Page, PageHeader } from "@/layout/PageHeader";
 import { useApp } from "@/state/AppContext";
-import { useProjectsQuery, useBranchesQuery, useDatabasesQuery, useRolesQuery, useEndpointsQuery, useOperationsQuery, useOrganizationsQuery, DEFAULT_WORKSPACE_ID } from "@/state/queries";
+import { useProjectsQuery, useBranchesQuery, useDatabasesQuery, useRolesQuery, useEndpointsQuery, useOperationsQuery, useOrganizationsQuery, DEFAULT_WORKSPACE_ID, normalizeUser, useCurrentUserQuery, userEmail } from "@/state/queries";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { StatusDot } from "@/components/ui/status-dot";
-import { Activity, Building2, Cable, Database, FolderGit2, GitBranch, KeyRound, Plus, TerminalSquare } from "lucide-react";
+import { Activity, Building2, Cable, Database, FolderGit2, GitBranch, KeyRound, Plus, TerminalSquare, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: React.ReactNode }) {
@@ -21,8 +21,29 @@ function Stat({ label, value, hint }: { label: string; value: React.ReactNode; h
   );
 }
 
+function greetingBand(date = new Date()) {
+  const h = date.getHours();
+  if (h >= 5 && h < 11) return "morning";
+  if (h >= 11 && h < 17) return "day";
+  if (h >= 17 && h < 22) return "evening";
+  return "night";
+}
+
+function greetingText(band: string, name: string) {
+  const first = name?.split(/\s+/)[0] || "Bigo";
+  if (band === "morning") return { title: `Good morning, ${first}`, desc: "Start with a workspace, choose a project, then keep operations under control." };
+  if (band === "day") return { title: `Good day, ${first}`, desc: "Your Neon workspace is ready. Pick the project you want to operate on." };
+  if (band === "evening") return { title: `Good evening, ${first}`, desc: "A focused evening pass: check projects, branches, endpoints, and recent operations." };
+  return { title: `Still building, ${first}?`, desc: "Late-session mode is on. Keep the dashboard lean and move deliberately." };
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function Dashboard() {
-  const { selectedOrganizationId, setSelectedOrganizationId, selectedProjectId, selectedBranchId } = useApp();
+  const { selectedOrganizationId, setSelectedOrganizationId, selectedProjectId, setSelectedProjectId, selectedBranchId, settings, playUiSound } = useApp();
+  const navigate = useNavigate();
   const orgs = useOrganizationsQuery();
   const projects = useProjectsQuery();
   const branches = useBranchesQuery(selectedProjectId);
@@ -30,26 +51,46 @@ export default function Dashboard() {
   const roles = useRolesQuery(selectedProjectId, selectedBranchId);
   const endpoints = useEndpointsQuery(selectedProjectId);
   const operations = useOperationsQuery(selectedProjectId);
+  const currentUser = useCurrentUserQuery();
+  const user = normalizeUser(currentUser.data);
+  const name = user?.name || userEmail(user) || "Bigo";
+  const band = greetingBand();
+  const greeting = greetingText(band, name);
+  const dismissKey = `neonpocket.greeting.dismissed.${todayKey()}.${band}.${userEmail(user) || name}`;
+  const [greetingDismissed, setGreetingDismissed] = useState(() => localStorage.getItem(dismissKey) === "1");
 
   useEffect(() => {
-    if (!selectedOrganizationId && !orgs.isLoading && (orgs.data?.unavailable || orgs.data?.organizations?.length === 0)) {
-      setSelectedOrganizationId(DEFAULT_WORKSPACE_ID);
-    }
-  }, [orgs.data, orgs.isLoading, selectedOrganizationId, setSelectedOrganizationId]);
+    setGreetingDismissed(localStorage.getItem(dismissKey) === "1");
+  }, [dismissKey]);
+
+  function dismissGreeting() {
+    localStorage.setItem(dismissKey, "1");
+    setGreetingDismissed(true);
+    playUiSound("soft");
+  }
 
   const proj = projects.data?.projects?.find((p: any) => p.id === selectedProjectId);
-
-  if (!selectedOrganizationId && (orgs.data?.unavailable || orgs.data?.organizations?.length === 0)) {
-    return <Page><Skeleton className="h-32 w-full" /></Page>;
-  }
+  const selectedWorkspaceName = useMemo(() => {
+    if (selectedOrganizationId === DEFAULT_WORKSPACE_ID) return "Default workspace";
+    return orgs.data?.organizations?.find((org: any) => org.id === selectedOrganizationId)?.name;
+  }, [orgs.data?.organizations, selectedOrganizationId]);
 
   if (!selectedOrganizationId) {
     return (
       <Page>
-        <PageHeader title="Dashboard" description="Choose an organization first, then select one of its projects." />
+        {settings.greetings && !greetingDismissed && (
+          <div className="relative overflow-hidden hairline rounded-xl bg-card p-4 mb-5">
+            <Button variant="ghost" size="icon" className="absolute right-2 top-2 size-8" onClick={dismissGreeting} aria-label="Dismiss greeting">
+              <X className="size-4" />
+            </Button>
+            <div className="text-xl font-semibold tracking-tight pr-8">{greeting.title}</div>
+            <div className="text-sm text-muted-foreground mt-1 max-w-2xl">{greeting.desc}</div>
+          </div>
+        )}
+        <PageHeader title="Dashboard" description="Choose a workspace first. Project tools stay locked until you explicitly select an organization or the default workspace." />
         {orgs.isLoading ? <Skeleton className="h-32 w-full" /> : (
           <div className="grid md:grid-cols-2 gap-3">
-            <button onClick={() => setSelectedOrganizationId(DEFAULT_WORKSPACE_ID)} className="hairline rounded-lg bg-card p-4 text-left hover:bg-accent/40 transition-colors">
+            <button onClick={() => { setSelectedOrganizationId(DEFAULT_WORKSPACE_ID); playUiSound("nav"); }} className="hairline rounded-lg bg-card p-4 text-left hover:bg-accent/40 transition-colors">
               <div className="flex items-center gap-2 text-sm font-medium"><Building2 className="size-4" /> Default workspace</div>
               <div className="mt-1 text-xs text-muted-foreground">List projects available without an explicit organization filter.</div>
             </button>
@@ -60,7 +101,7 @@ export default function Dashboard() {
               </div>
             )}
             {(orgs.data?.organizations || []).map((org: any) => (
-              <button key={org.id} onClick={() => setSelectedOrganizationId(org.id)} className="hairline rounded-lg bg-card p-4 text-left hover:bg-accent/40 transition-colors">
+              <button key={org.id} onClick={() => { setSelectedOrganizationId(org.id); playUiSound("nav"); }} className="hairline rounded-lg bg-card p-4 text-left hover:bg-accent/40 transition-colors">
                 <div className="flex items-center gap-2 text-sm font-medium"><Building2 className="size-4" /> {org.name}</div>
                 <div className="mt-1 text-xs text-muted-foreground mono truncate">{org.id}</div>
                 {org.role && <div className="mt-2 inline-flex rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{org.role}</div>}
@@ -77,7 +118,7 @@ export default function Dashboard() {
   if (!projects.data?.projects?.length) {
     return (
       <Page>
-        <PageHeader title="Dashboard" description="No projects are available in the selected organization." />
+        <PageHeader title="Dashboard" description="No projects are available in the selected workspace." />
         <EmptyState icon={FolderGit2} title="No projects in this workspace" description="Choose another organization or create a Neon project in the selected workspace." />
       </Page>
     );
@@ -85,14 +126,23 @@ export default function Dashboard() {
   if (!selectedProjectId || !proj) {
     return (
       <Page>
-        <PageHeader title="Dashboard" description="Select a project from the top bar to unlock project and branch tools." />
+        {settings.greetings && !greetingDismissed && (
+          <div className="relative overflow-hidden hairline rounded-xl bg-card p-4 mb-5">
+            <Button variant="ghost" size="icon" className="absolute right-2 top-2 size-8" onClick={dismissGreeting} aria-label="Dismiss greeting">
+              <X className="size-4" />
+            </Button>
+            <div className="text-xl font-semibold tracking-tight pr-8">{greeting.title}</div>
+            <div className="text-sm text-muted-foreground mt-1 max-w-2xl">{greeting.desc}</div>
+          </div>
+        )}
+        <PageHeader title="Dashboard" description={`Select a project from ${selectedWorkspaceName || "this workspace"}.`} />
         <div className="grid md:grid-cols-2 gap-3">
           {projects.data.projects.map((project: any) => (
-            <div key={project.id} className="hairline rounded-lg bg-card p-4">
+            <button key={project.id} onClick={() => { setSelectedProjectId(project.id); playUiSound("nav"); navigate("/dashboard"); }} className="hairline rounded-lg bg-card p-4 text-left hover:bg-accent/40 transition-colors">
               <div className="flex items-center gap-2 text-sm font-medium"><FolderGit2 className="size-4" /> {project.name}</div>
               <div className="mt-1 text-xs text-muted-foreground mono truncate">{project.id}</div>
               <div className="mt-2 text-xs text-muted-foreground">{project.region_id} · PostgreSQL {project.pg_version ?? "—"}</div>
-            </div>
+            </button>
           ))}
         </div>
       </Page>
@@ -101,6 +151,15 @@ export default function Dashboard() {
 
   return (
     <Page>
+      {settings.greetings && !greetingDismissed && (
+        <div className="relative overflow-hidden hairline rounded-xl bg-card p-4 mb-5">
+          <Button variant="ghost" size="icon" className="absolute right-2 top-2 size-8" onClick={dismissGreeting} aria-label="Dismiss greeting">
+            <X className="size-4" />
+          </Button>
+          <div className="text-xl font-semibold tracking-tight pr-8">{greeting.title}</div>
+          <div className="text-sm text-muted-foreground mt-1 max-w-2xl">{greeting.desc}</div>
+        </div>
+      )}
       <PageHeader title="Dashboard" description={proj?.name ? `${proj.name}` : "Select a project"} />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

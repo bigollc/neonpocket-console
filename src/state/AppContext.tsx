@@ -15,6 +15,8 @@ interface Settings {
   sounds: boolean;
   apiMode: ApiMode;
   localHistory: boolean;
+  greetings: boolean;
+  cloudProfileSync: boolean;
 }
 
 interface AppState {
@@ -48,7 +50,13 @@ const SETTINGS_MIGRATION_KEY = "neonpocket.settings.v2.cloudflare-worker";
 const SELECT_KEY = "neonpocket.select.v1";
 
 const defaultSettings: Settings = {
-  theme: "system", motion: "full", sounds: false, apiMode: "auto", localHistory: false,
+  theme: "system",
+  motion: "full",
+  sounds: false,
+  apiMode: "auto",
+  localHistory: false,
+  greetings: true,
+  cloudProfileSync: false,
 };
 
 const Ctx = createContext<AppState | null>(null);
@@ -89,7 +97,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const selectedOrganizationId = selectedOrganizationIdState;
   const selectedProjectId = selectedProjectIdState;
   const selectedBranchId = selectedBranchIdState;
-  // Theme
+
   useEffect(() => {
     applyTheme(settings.theme);
     if (settings.theme === "system") {
@@ -100,13 +108,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings.theme]);
 
-  // Persist settings & selection
   useEffect(() => { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }, [settings]);
   useEffect(() => {
     localStorage.setItem(SELECT_KEY, JSON.stringify({ organizationId: selectedOrganizationId, projectId: selectedProjectId, branchId: selectedBranchId, database: selectedDatabase }));
   }, [selectedOrganizationId, selectedProjectId, selectedBranchId, selectedDatabase]);
 
-  // Diagnostics ring buffer
   useEffect(() => {
     const push = (e: DiagnosticEntry) => setDiagnostics(d => [e, ...d].slice(0, 100));
     const off = onDiagnostic(push);
@@ -140,7 +146,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // UI sound delegation for common controls. Keeps tiny feedback consistent without touching every button/input.
   useEffect(() => {
     if (!settings.sounds) return;
     const onPointerUp = (event: PointerEvent) => {
@@ -160,7 +165,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [settings.sounds]);
 
-  // Vault presence
   const refreshVaultState = useCallback(async () => { setHasStoredVault(await hasVault()); }, []);
   useEffect(() => { refreshVaultState(); }, [refreshVaultState]);
 

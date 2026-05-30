@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Building2, Check, ChevronDown, FolderGit2, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -15,10 +15,14 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
     setSelectedProjectId,
     selectedBranchId,
     setSelectedBranchId,
+    playUiSound,
   } = useApp();
   const orgs = useOrganizationsQuery();
   const projects = useProjectsQuery();
   const branches = useBranchesQuery(selectedProjectId);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
   const defaultName = "Default workspace";
   const workspaces = useMemo(() => [
     { id: DEFAULT_WORKSPACE_ID, name: defaultName, isDefault: true },
@@ -26,14 +30,10 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
   ], [orgs.data?.organizations, defaultName]);
 
   useEffect(() => {
-    if (!selectedOrganizationId && !orgs.isLoading && (orgs.data?.unavailable || orgs.data?.organizations?.length === 0)) {
-      setSelectedOrganizationId(DEFAULT_WORKSPACE_ID);
-      return;
-    }
     if (selectedOrganizationId && !workspaces.some(w => w.id === selectedOrganizationId) && !orgs.isLoading) {
       setSelectedOrganizationId(null);
     }
-  }, [orgs.data, orgs.isLoading, selectedOrganizationId, setSelectedOrganizationId, workspaces]);
+  }, [orgs.isLoading, selectedOrganizationId, setSelectedOrganizationId, workspaces]);
 
   useEffect(() => {
     if (selectedProjectId && projects.data?.projects && !projects.data.projects.some((p: any) => p.id === selectedProjectId)) {
@@ -57,7 +57,7 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
 
   return (
     <div className={cn("flex items-center gap-1.5", compact && "scale-95 origin-left")}>
-      <Popover>
+      <Popover open={workspaceOpen} onOpenChange={setWorkspaceOpen}>
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" className="h-8 max-w-[34vw] truncate">
             <Building2 className="size-3.5 mr-1.5 shrink-0" />
@@ -72,7 +72,11 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
               <CommandEmpty>{orgs.isLoading ? "Loading…" : "No organizations"}</CommandEmpty>
               <CommandGroup heading="Workspaces">
                 {workspaces.map((org: any) => (
-                  <CommandItem key={org.id} value={`${org.name} ${org.id}`} onSelect={() => setSelectedOrganizationId(org.id)}>
+                  <CommandItem key={org.id} value={`${org.name} ${org.id}`} onSelect={() => {
+                    setSelectedOrganizationId(org.id);
+                    setWorkspaceOpen(false);
+                    playUiSound("nav");
+                  }}>
                     <Building2 className="size-3.5 mr-2 opacity-70" />
                     <span className="truncate">{org.name}</span>
                     {org.isDefault && <span className="ml-2 rounded bg-muted px-1 text-[10px] text-muted-foreground">default</span>}
@@ -85,7 +89,7 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
         </PopoverContent>
       </Popover>
 
-      <Popover>
+      <Popover open={projectOpen} onOpenChange={setProjectOpen}>
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" className="h-8 max-w-[32vw] truncate" disabled={!selectedOrganizationId}>
             <FolderGit2 className="size-3.5 mr-1.5 shrink-0" />
@@ -100,7 +104,11 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
               <CommandEmpty>{projects.isLoading ? "Loading…" : "No projects"}</CommandEmpty>
               <CommandGroup>
                 {projects.data?.projects?.map((p: any) => (
-                  <CommandItem key={p.id} value={`${p.name} ${p.id}`} onSelect={() => setSelectedProjectId(p.id)}>
+                  <CommandItem key={p.id} value={`${p.name} ${p.id}`} onSelect={() => {
+                    setSelectedProjectId(p.id);
+                    setProjectOpen(false);
+                    playUiSound("nav");
+                  }}>
                     <FolderGit2 className="size-3.5 mr-2 opacity-70" />
                     <span className="truncate">{p.name}</span>
                     <span className="ml-auto text-[10px] mono text-muted-foreground">{p.region_id}</span>
@@ -113,7 +121,7 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
         </PopoverContent>
       </Popover>
 
-      <Popover>
+      <Popover open={branchOpen} onOpenChange={setBranchOpen}>
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" className="h-8 max-w-[28vw] truncate" disabled={!selectedProjectId}>
             <GitBranch className="size-3.5 mr-1.5 shrink-0" />
@@ -128,7 +136,11 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
               <CommandEmpty>{branches.isLoading ? "Loading…" : "No branches"}</CommandEmpty>
               <CommandGroup>
                 {branches.data?.branches?.map((b: any) => (
-                  <CommandItem key={b.id} value={`${b.name} ${b.id}`} onSelect={() => setSelectedBranchId(b.id)}>
+                  <CommandItem key={b.id} value={`${b.name} ${b.id}`} onSelect={() => {
+                    setSelectedBranchId(b.id);
+                    setBranchOpen(false);
+                    playUiSound("nav");
+                  }}>
                     <GitBranch className="size-3.5 mr-2 opacity-70" />
                     <span className="truncate">{b.name}</span>
                     {(b.primary || b.default) && <span className="ml-2 text-[10px] px-1 rounded bg-muted text-muted-foreground">primary</span>}
