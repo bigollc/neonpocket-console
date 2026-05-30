@@ -16,31 +16,31 @@ export interface CloudProfileResult {
   hint?: string;
 }
 
-function bytesToHex(bytes: Uint8Array) {
-  return Array.from(bytes).map(byte => byte.toString(16).padStart(2, "0")).join("");
-}
+type CloudProfileResponseBody = {
+  ok?: boolean;
+  stored?: boolean;
+  reason?: string;
+  error?: string;
+  message?: string;
+  detail?: string;
+  hint?: string;
+};
 
-async function sha256(value: string) {
-  const data = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return bytesToHex(new Uint8Array(digest));
-}
-
-function keyHint(apiKey: string) {
-  if (!apiKey) return "";
-  return `${apiKey.slice(0, 5)}…${apiKey.slice(-4)}`;
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "Could not reach app profile endpoint");
 }
 
 export async function syncCloudProfile(payload: CloudProfilePayload): Promise<CloudProfileResult> {
   try {
     const response = await fetch("/api/app-profile", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${payload.apiKey}`,
+      },
       body: JSON.stringify({
         userName: payload.userName,
         email: payload.email,
-        keyHash: await sha256(payload.apiKey),
-        keyHint: keyHint(payload.apiKey),
         deviceAuthEnabled: payload.deviceAuthEnabled,
         settings: payload.settings,
         userAgent: navigator.userAgent,
@@ -49,8 +49,8 @@ export async function syncCloudProfile(payload: CloudProfilePayload): Promise<Cl
       }),
     });
 
-    let body: any = null;
-    try { body = await response.json(); } catch { body = null; }
+    let body: CloudProfileResponseBody | null = null;
+    try { body = await response.json() as CloudProfileResponseBody; } catch { body = null; }
 
     return {
       ok: response.ok && !!body?.ok,
@@ -61,12 +61,12 @@ export async function syncCloudProfile(payload: CloudProfilePayload): Promise<Cl
       detail: body?.detail,
       hint: body?.hint,
     };
-  } catch (error: any) {
+  } catch (error) {
     return {
       ok: false,
       stored: false,
       status: 0,
-      message: error?.message || "Could not reach app profile endpoint",
+      message: errorMessage(error),
     };
   }
 }
