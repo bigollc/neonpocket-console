@@ -113,6 +113,17 @@
     font-family: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "Inter", sans-serif;
     letter-spacing: -0.02em;
   }
+  input[type="datetime-local"] {
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  input[type="datetime-local"]::-webkit-date-and-time-value {
+    min-width: 0;
+    text-align: center;
+  }
 }
 
 @layer components {
