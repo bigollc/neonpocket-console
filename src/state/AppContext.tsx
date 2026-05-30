@@ -46,14 +46,13 @@ interface AppState {
 }
 
 const SETTINGS_KEY = "neonpocket.settings.v1";
-const SETTINGS_MIGRATION_KEY = "neonpocket.settings.v2.cloudflare-worker";
 const SELECT_KEY = "neonpocket.select.v1";
 
 const defaultSettings: Settings = {
   theme: "system",
   motion: "full",
   sounds: false,
-  apiMode: "auto",
+  apiMode: "proxy",
   localHistory: false,
   greetings: true,
   cloudProfileSync: false,
@@ -64,12 +63,7 @@ const Ctx = createContext<AppState | null>(null);
 function loadSettings(): Settings {
   try {
     const loaded = { ...defaultSettings, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}")) };
-    let apiMode: ApiMode = ["auto", "direct", "proxy"].includes(loaded.apiMode) ? loaded.apiMode : "auto";
-    if ((apiMode === "direct" || loaded.apiMode === "shortcut") && !localStorage.getItem(SETTINGS_MIGRATION_KEY)) {
-      apiMode = "auto";
-      localStorage.setItem(SETTINGS_MIGRATION_KEY, "1");
-    }
-    return { ...loaded, apiMode };
+    return { ...loaded, apiMode: "proxy" };
   } catch {
     return defaultSettings;
   }
@@ -108,7 +102,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings.theme]);
 
-  useEffect(() => { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }, [settings]);
+  useEffect(() => { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, apiMode: "proxy" })); }, [settings]);
   useEffect(() => {
     localStorage.setItem(SELECT_KEY, JSON.stringify({ organizationId: selectedOrganizationId, projectId: selectedProjectId, branchId: selectedBranchId, database: selectedDatabase }));
   }, [selectedOrganizationId, selectedProjectId, selectedBranchId, selectedDatabase]);
@@ -195,7 +189,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [refreshVaultState]);
 
   const updateSettings = useCallback((s: Partial<Settings>) => setSettings(prev => {
-    const next = { ...prev, ...s };
+    const next = { ...prev, ...s, apiMode: "proxy" as ApiMode };
     if (!prev.sounds && next.sounds) void playSound("enabled");
     return next;
   }), []);
@@ -230,6 +224,6 @@ export function useApp() {
 }
 
 export function useNeonCtx() {
-  const { apiKey, settings } = useApp();
-  return { apiKey, mode: settings.apiMode };
+  const { apiKey } = useApp();
+  return { apiKey, mode: "proxy" as ApiMode };
 }

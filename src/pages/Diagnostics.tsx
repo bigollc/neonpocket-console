@@ -17,9 +17,10 @@ function redact(value: string | null | undefined) {
 }
 
 export default function Diagnostics() {
-  const { apiKey, settings, diagnostics, clearDiagnostics } = useApp();
+  const { apiKey, settings, diagnostics, clearDiagnostics, playUiSound } = useApp();
   const [running, setRunning] = useState(false);
   const [testKey, setTestKey] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
   const effectiveKey = apiKey || testKey.replace(/\s+/g, "");
 
   const report = useMemo(() => ({
@@ -29,18 +30,46 @@ export default function Diagnostics() {
     page_path: window.location.pathname,
     neon_base: NEON_BASE,
     neon_proxy_url: NEON_PROXY_URL,
-    api_mode: settings.apiMode,
+    api_mode: "proxy",
     api_key_hint: redact(effectiveKey),
     user_agent: navigator.userAgent,
     online: navigator.onLine,
     diagnostics,
-  }), [diagnostics, effectiveKey, settings.apiMode]);
+  }), [diagnostics, effectiveKey]);
 
   const reportText = JSON.stringify(report, null, 2);
+  const requestLogText = useMemo(() => diagnostics.map(d => [
+    d.status,
+    `${d.ms}ms`,
+    d.route,
+    d.ok ? "ok" : (d.errorMessage || "failed"),
+    d.ts,
+  ].join("\t")).join("\n"), [diagnostics]);
 
   async function copyReport() {
     await navigator.clipboard.writeText(reportText);
-    toast.success("Diagnostics copied");
+    playUiSound("success");
+    toast.success("Diagnostics report copied");
+  }
+
+  async function copyRequestLog() {
+    await navigator.clipboard.writeText(requestLogText || "No requests yet.");
+    playUiSound("success");
+    toast.success("Request log copied");
+  }
+
+  function clearWithConfirm() {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      playUiSound("warning");
+      toast.warning("Tap Clear again to confirm");
+      window.setTimeout(() => setConfirmClear(false), 6000);
+      return;
+    }
+    clearDiagnostics();
+    setConfirmClear(false);
+    playUiSound("soft");
+    toast.success("Diagnostics cleared");
   }
 
   async function runChecks() {
@@ -53,8 +82,10 @@ export default function Diagnostics() {
       await NeonService.getCurrentUser({ apiKey: effectiveKey, mode: settings.apiMode });
       await NeonService.listOrganizations({ apiKey: effectiveKey, mode: settings.apiMode });
       await NeonService.listProjects({ apiKey: effectiveKey, mode: settings.apiMode });
+      playUiSound("success");
       toast.success("Neon checks completed");
     } catch (error: any) {
+      playUiSound("warning");
       toast.error("Neon check failed", { description: error?.message || "Unknown error" });
     } finally {
       setRunning(false);
@@ -80,11 +111,10 @@ export default function Diagnostics() {
 
       <Alert className="mb-4">
         <Activity className="size-4" />
-        <AlertTitle>Cloudflare Worker proxy</AlertTitle>
+        <AlertTitle>Proxy-only Neon API transport</AlertTitle>
         <AlertDescription>
-          Auto mode tries <span className="mono">{NEON_BASE}</span> first. If the browser blocks the direct request, it falls back to
-          <span className="mono"> {NEON_PROXY_URL}</span>. For Lovable/static deployments, set <span className="mono">VITE_NEON_PROXY_URL</span>
-          to your Cloudflare Worker URL because static hosting does not execute <span className="mono">/api/neon-proxy</span>.
+          All Neon API calls are locked to <span className="mono">{NEON_PROXY_URL}</span>. Direct browser calls to
+          <span className="mono"> {NEON_BASE}</span> are disabled because production browsers block Neon's CORS/preflight flow.
         </AlertDescription>
       </Alert>
 
@@ -119,11 +149,36 @@ export default function Diagnostics() {
         </div>
       </div>
 
+      <div className="hairline rounded-lg bg-card mb-4">
+        <div className="px-3 py-2 border-b border-border flex items-center justify-between gap-2">
+          <div className="text-sm font-medium">Request log</div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={copyRequestLog} disabled={diagnostics.length === 0}>
+              <ClipboardCopy className="size-3.5 mr-1.5" /> Copy all
+            </Button>
+            <Button variant={confirmClear ? "destructive" : "ghost"} size="sm" onClick={clearWithConfirm} disabled={diagnostics.length === 0}>
+              <Trash2 className="size-3.5 mr-1.5" /> {confirmClear ? "Confirm clear" : "Clear"}
+            </Button>
+          </div>
+        </div>
+        <div className="max-h-56 overflow-auto text-[11px] mono">
+          {diagnostics.length === 0 ? <div className="p-3 text-muted-foreground">No requests yet.</div> :
+            diagnostics.map((d, i) => (
+              <div key={i} className={`px-3 py-1.5 border-b last:border-b-0 border-border flex gap-2 min-w-0 ${d.ok ? "" : "text-destructive"}`}>
+                <span className="w-12 shrink-0">{d.status}</span>
+                <span className="w-14 shrink-0">{d.ms}ms</span>
+                <span className="min-w-0 break-words">{d.route}</span>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+
       <div className="hairline rounded-lg bg-card">
         <div className="px-3 py-2 border-b border-border flex items-center justify-between gap-2">
           <div className="text-sm font-medium">Copyable report</div>
-          <Button variant="ghost" size="sm" onClick={() => { clearDiagnostics(); toast.success("Diagnostics cleared"); }}>
-            <Trash2 className="size-3.5 mr-1.5" /> Clear
+          <Button variant="ghost" size="sm" onClick={copyReport}>
+            <ClipboardCopy className="size-3.5 mr-1.5" /> Copy report
           </Button>
         </div>
         <Textarea value={reportText} readOnly className="min-h-[420px] mono text-[11px] rounded-none border-0 focus-visible:ring-0" />
