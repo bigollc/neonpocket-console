@@ -11,7 +11,7 @@ import { ClipboardCopy, Cloud, Lock, LogOut, RotateCw, ShieldCheck, Trash2, Volu
 import { removeVaultPassphrase, vaultUsesPassphrase } from "@/lib/vault";
 import { clearDeviceAuth, getDeviceAuthRecord, hasDeviceAuth, setupDeviceAuth, supportsDeviceAuth, verifyDeviceAuth } from "@/lib/deviceAuth";
 import { syncCloudProfile, type CloudProfileResult } from "@/lib/cloudProfile";
-import { normalizeUser, useCurrentUserQuery, userEmail } from "@/state/queries";
+import { DEFAULT_WORKSPACE_ID, normalizeOrganization, normalizeUser, useCurrentUserQuery, useOrganizationQuery, useOrganizationsQuery, userEmail } from "@/state/queries";
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
@@ -41,13 +41,41 @@ function userNameFromPayload(user: any, email: string) {
   return user?.name || user?.login || email || "Neon user";
 }
 
+function firstText(...values: any[]) {
+  return values.find(value => typeof value === "string" && value.trim())?.trim() || "";
+}
+
+function planLabel(plan: string) {
+  if (!plan) return "not exposed by API";
+  return plan.replace(/_/g, " ");
+}
+
+function accountTypeLabel({ selectedOrganizationId, org, user, currentUserFailed }: { selectedOrganizationId: string | null; org: any; user: any; currentUserFailed: boolean }) {
+  if (selectedOrganizationId && selectedOrganizationId !== DEFAULT_WORKSPACE_ID) return "Organization account";
+  if (selectedOrganizationId === DEFAULT_WORKSPACE_ID) return "Default workspace";
+  if (currentUserFailed) return "API key scoped account";
+  if (user?.id || user?.email) return "Personal Neon account";
+  return "Connected API key";
+}
+
 export default function Settings() {
-  const { apiKey, settings, updateSettings, signOut, forgetStoredKey, hasStoredVault, diagnostics, clearDiagnostics, clearLocalCache, refreshVaultState, playUiSound } = useApp();
+  const { apiKey, settings, updateSettings, signOut, forgetStoredKey, hasStoredVault, diagnostics, clearDiagnostics, clearLocalCache, refreshVaultState, selectedOrganizationId, playUiSound } = useApp();
   const navigate = useNavigate();
   const currentUser = useCurrentUserQuery();
+  const organizations = useOrganizationsQuery();
+  const organizationDetail = useOrganizationQuery(selectedOrganizationId);
   const user = normalizeUser(currentUser.data);
+  const organization = normalizeOrganization(organizationDetail.data);
+  const selectedOrgFromList = organizations.data?.organizations?.find((org: any) => org.id === selectedOrganizationId);
+  const activeOrg = organization || selectedOrgFromList;
   const email = userEmail(user);
   const userName = userNameFromPayload(user, email);
+  const accountPlan = firstText(activeOrg?.plan, selectedOrgFromList?.plan, user?.plan);
+  const accountRole = firstText(activeOrg?.role, activeOrg?.org_role, activeOrg?.membership?.role, selectedOrgFromList?.role, user?.role);
+  const accountType = accountTypeLabel({ selectedOrganizationId, org: activeOrg, user, currentUserFailed: !!currentUser.error });
+  const selectedWorkspaceName = selectedOrganizationId === DEFAULT_WORKSPACE_ID
+    ? "Default workspace"
+    : activeOrg?.name || activeOrg?.handle || selectedOrganizationId || "No workspace selected";
   const lastFailed = diagnostics.find(d => !d.ok);
 
   const [usesPassphrase, setUsesPassphrase] = useState(false);
@@ -207,7 +235,36 @@ export default function Settings() {
   return (
     <Page>
       <PageHeader title="Settings" />
+
       <div className="hairline rounded-lg p-4 bg-card">
+        <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Account details</div>
+        <Row title="Signed in as" desc={email || currentUser.error ? "Current Neon user profile" : "Profile endpoint did not return an email."}>
+          <div className="space-y-0.5">
+            <div className="text-sm font-medium truncate">{userName}</div>
+            {email && <div className="text-xs text-muted-foreground truncate">{email}</div>}
+          </div>
+        </Row>
+        <Row title="Account type" desc="Derived from the selected workspace, user profile, and API key access scope.">
+          <span className="text-sm text-muted-foreground">{accountType}</span>
+        </Row>
+        <Row title="Neon plan" desc="Shown from the selected organization detail when Neon exposes it through the API.">
+          <span className="text-sm mono text-muted-foreground">{organizationDetail.isLoading ? "loading…" : planLabel(accountPlan)}</span>
+        </Row>
+        <Row title="Organization role" desc="Admin/member/owner role when returned by the organization APIs.">
+          <span className="text-sm mono text-muted-foreground">{organizationDetail.isLoading ? "loading…" : accountRole || "not exposed by API"}</span>
+        </Row>
+        <Row title="Active workspace">
+          <div className="space-y-0.5">
+            <div className="text-sm text-muted-foreground truncate">{selectedWorkspaceName}</div>
+            {selectedOrganizationId && <div className="text-[11px] mono text-muted-foreground truncate">{selectedOrganizationId}</div>}
+          </div>
+        </Row>
+        <Row title="API key scope" desc="If profile or org detail calls fail, the key can still be valid but scoped more narrowly.">
+          <span className="text-xs text-muted-foreground">{currentUser.error ? "limited / scoped" : organizationDetail.error ? "org detail limited" : "profile accessible"}</span>
+        </Row>
+      </div>
+
+      <div className="hairline rounded-lg p-4 bg-card mt-4">
         <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Appearance</div>
         <Row title="Theme">
           <Select value={settings.theme} onValueChange={(v: any) => updateSettings({ theme: v })}>
