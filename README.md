@@ -1,4 +1,5 @@
 # NeonPocket Console
+<img width="1320" height="2682" alt="image" src="https://github.com/user-attachments/assets/6cb50329-5fa0-4305-b1f6-6b4c18fc4577" />
 
 A mobile-first management console for [Neon.tech](https://neon.tech) built with React + Vite + TypeScript. Uses only real Neon public APIs — **no mock data for Neon resources, no app-created Neon SQL tables, and no app-created Neon RLS policies**.
 
