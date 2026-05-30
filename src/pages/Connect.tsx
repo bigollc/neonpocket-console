@@ -64,7 +64,7 @@ function unexpectedNeonShapeError(route: string) {
 
 function userEmailFromPayload(value: any) {
   const user = value?.user ?? value;
-  return user?.email || user?.auth_accounts?.find?.((a: any) => a.email)?.email || "";
+  return user?.email || user?.auth_accounts?.find?.((account: any) => account.email)?.email || "";
 }
 
 function userNameFromPayload(value: any) {
@@ -80,6 +80,13 @@ const navigation = [
   { label: "FAQ", href: "#faq" },
 ];
 
+const featureMap = [
+  { icon: Layers3, label: "Projects & branches" },
+  { icon: Database, label: "Databases & roles" },
+  { icon: Network, label: "Endpoints & operations" },
+  { icon: WalletCards, label: "Plan & usage visibility" },
+];
+
 const metricPreview = [
   { label: "Projects", value: "12", icon: Layers3 },
   { label: "Branches", value: "48", icon: GitBranch },
@@ -90,33 +97,33 @@ const metricPreview = [
 const benefitCards = [
   {
     icon: Boxes,
-    title: "You stop jumping between desktop tabs",
+    title: "Stop jumping between desktop tabs",
     desc: "NeonPocket is shaped for the moments when you need to inspect a project from a phone: branches, databases, roles, endpoints, operations, organization context, and Data API availability in one compact flow.",
   },
   {
     icon: Users,
-    title: "You understand the organization before acting",
+    title: "Understand the organization before acting",
     desc: "The app starts with organization selection, resolves your membership role through the members API, and clears stale project or branch context when you move back to the top-level dashboard.",
   },
   {
     icon: Activity,
-    title: "You see usage honestly, not decoratively",
+    title: "See usage honestly, not decoratively",
     desc: "When Neon exposes consumption history for your plan and key scope, we display compute, storage, history, and transfer. When it does not, the UI explains that limitation instead of inventing charts.",
   },
   {
     icon: ShieldCheck,
-    title: "You keep the key model transparent",
+    title: "Keep the API key model transparent",
     desc: "The raw API key is memory-only by default. If you choose to remember it, it is encrypted locally. Optional cloud profile sync stores metadata and preferences, not the plaintext Neon key.",
   },
   {
     icon: TerminalSquare,
-    title: "You can debug API access faster",
-    desc: "Diagnostics show the route, status, latency, and last failed Neon call so a permission issue feels explainable instead of mysterious.",
+    title: "Debug access faster",
+    desc: "Diagnostics show the route, status, latency, and last failed Neon call so a permission, plan, or proxy issue feels explainable instead of mysterious.",
   },
   {
     icon: Database,
-    title: "You get a practical operator view",
-    desc: "This is not another marketing dashboard. It is a narrow control plane for the real operational objects Neon exposes through documented APIs.",
+    title: "Use a practical operator view",
+    desc: "This is not another decorative marketing dashboard. It is a narrow control plane for the real operational objects Neon exposes through documented APIs.",
   },
 ];
 
@@ -178,7 +185,7 @@ const references = [
   {
     title: "Consumption metrics",
     href: "https://neon.com/docs/guides/consumption-metrics",
-    detail: "Usage metrics are plan and scope dependent. NeonPocket reads consumption history when Neon exposes it, converts compute seconds into CU-hours and byte metrics into readable storage/transfer values, and shows a locked/limited state when the API does not return those billing metrics for the current account.",
+    detail: "Usage metrics are plan and scope dependent. NeonPocket reads consumption history when Neon exposes it, converts compute seconds into CU-hours and byte metrics into readable storage/transfer values, and shows a locked or limited state when the API does not return those billing metrics for the current account.",
   },
   {
     title: "Neon Data API",
@@ -276,7 +283,7 @@ function ConsolePreview() {
       <div className="mb-3 flex items-center justify-between border-b pb-3">
         <div className="flex items-center gap-2">
           <span className="size-2.5 rounded-full bg-destructive/70" />
-          <span className="size-2.5 rounded-full bg-warning/70" />
+          <span className="size-2.5 rounded-full bg-primary/40" />
           <span className="size-2.5 rounded-full bg-primary/70" />
         </div>
         <div className="rounded-full border px-2 py-1 text-[10px] text-muted-foreground">live API state</div>
@@ -429,7 +436,7 @@ export default function Connect() {
               <a href="#security"><Button size="lg" variant="outline" className="w-full sm:w-auto">Read the security model</Button></a>
             </div>
             <div className="mt-6 flex flex-wrap gap-2 text-xs text-muted-foreground">
-              {featureMap.map(item => <span key={item.label} className="rounded-full border bg-card/60 px-3 py-1">{item.label}</span>)}
+              {featureMap.map(item => <span key={item.label} className="inline-flex items-center gap-1.5 rounded-full border bg-card/60 px-3 py-1"><item.icon className="size-3" />{item.label}</span>)}
             </div>
           </motion.div>
           <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }}>
@@ -585,7 +592,7 @@ export default function Connect() {
                   <Label htmlFor="ak" className="flex items-center gap-1.5"><KeyRound className="size-3.5" />Neon API key</Label>
                   <div className="relative"><Input id="ak" type={show ? "text" : "password"} placeholder="napi_…" autoComplete="off" value={apiKey} onChange={e => setKey(e.target.value)} className="pr-10 mono" /><button type="button" onClick={() => setShow(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Toggle visibility">{show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button></div>
                   <div className="text-[11px] text-muted-foreground break-words">Create one in Neon Console under <span className="mono">Account settings → API keys</span>. Neon Console API keys usually start with <span className="mono">napi_</span>.</div>
-                  {looksLikeLegacyPrefix && <div className="text-[11px] text-warning break-words">This looks like a database or legacy token prefix. Neon API access expects a Console API key, typically starting with <span className="mono">napi_</span>.</div>}
+                  {looksLikeLegacyPrefix && <div className="text-[11px] text-destructive break-words">This looks like a database or legacy token prefix. Neon API access expects a Console API key, typically starting with <span className="mono">napi_</span>.</div>}
                   {normalizedKey && !looksLikeApiKey && !looksLikeLegacyPrefix && <div className="text-[11px] text-muted-foreground break-words">The app will still try this token, but double-check that it is a Neon Console API key rather than a connection string or password.</div>}
                 </div>
                 <div className="flex items-center justify-between rounded-md hairline p-3"><div><div className="text-sm font-medium">Remember on this device</div><div className="text-[11px] text-muted-foreground">Encrypted locally with Web Crypto AES-GCM in IndexedDB.</div></div><Switch checked={remember} onCheckedChange={setRemember} /></div>
