@@ -22,6 +22,10 @@ export function normalizeUser(payload: any): NeonUser | null {
   return payload?.user ?? payload ?? null;
 }
 
+export function normalizeOrganization(payload: any): NeonOrganization | null {
+  return payload?.organization ?? payload ?? null;
+}
+
 export function userEmail(user: NeonUser | null | undefined) {
   return user?.email || user?.auth_accounts?.find(a => a.email)?.email || "";
 }
@@ -64,6 +68,16 @@ export function useOrganizationsQuery() {
         throw error;
       }
     },
+    retry: (count, err) => !!err?.retryable && count < 2,
+  });
+}
+
+export function useOrganizationQuery(orgId: string | null | undefined) {
+  const { apiKey, settings } = useApp();
+  return useQuery<any, NormalizedError>({
+    queryKey: ["organization", orgId || "none", settings.apiMode],
+    enabled: !!apiKey && !!orgId && orgId !== DEFAULT_WORKSPACE_ID,
+    queryFn: ({ signal }) => NeonService.getOrganization({ ...ctxOf(apiKey, settings.apiMode), signal }, orgId!),
     retry: (count, err) => !!err?.retryable && count < 2,
   });
 }
