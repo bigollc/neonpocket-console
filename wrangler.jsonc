@@ -16,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "neon",
-      "database_id": "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID"
+      "database_id": "fb4426d9-6d44-4946-b7d3-ff5daf97a34c"
     }
   ]
 }
