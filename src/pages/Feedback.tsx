@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Copy, Info, Mail } from "lucide-react";
+import { Info, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 const SUPPORT_EMAIL = "info@webusta.org";
@@ -146,7 +146,7 @@ export default function Feedback() {
 
   const template = `## ${title || "Feedback title required"}
 
-${details || "Feedback details required before copying or opening email."}
+${details || "Feedback details required before opening email."}
 
 ---
 ${humanSummary}
@@ -162,23 +162,14 @@ ${JSON.stringify(diag, null, 2)}
   function requireFields() {
     if (canSubmit) return true;
     playUiSound("warning");
-    toast.error("Title and details are required", { description: "Add both fields before copying or opening email." });
+    toast.error("Title and details are required", { description: "Add both fields before opening email." });
     return false;
   }
 
-  async function copyTemplate() {
+  function openEmail() {
     if (!requireFields()) return;
-    await navigator.clipboard.writeText(template);
-    playUiSound("success");
-    toast.success("Copied issue template");
-  }
-
-  function openEmail(event: React.MouseEvent<HTMLAnchorElement>) {
-    if (!requireFields()) {
-      event.preventDefault();
-      return;
-    }
     playUiSound("nav");
+    window.location.href = mailto;
   }
 
   return (
@@ -194,17 +185,12 @@ ${JSON.stringify(diag, null, 2)}
           <Textarea value={details} onChange={e => setDetails(e.target.value)} className="min-h-[160px]" placeholder="What happened, what did you expect, and what were you trying to do?" />
         </div>
         <div className="flex gap-2">
-          <Button onClick={copyTemplate} disabled={!canSubmit}>
-            <Copy className="size-4 mr-2" />Copy
-          </Button>
-          <Button variant="outline" asChild>
-            <a href={canSubmit ? mailto : undefined} aria-disabled={!canSubmit} onClick={openEmail} className={!canSubmit ? "pointer-events-none opacity-50" : undefined}>
-              <Mail className="size-4 mr-2" />Open email
-            </a>
+          <Button variant="outline" disabled={!canSubmit} onClick={openEmail}>
+            <Mail className="size-4 mr-2" />Open email
           </Button>
         </div>
-        <div className="flex items-start gap-2 rounded-md border bg-card/70 p-3 text-xs text-muted-foreground">
-          <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border text-foreground">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="grid size-5 shrink-0 place-items-center rounded-full border text-foreground">
             <Info className="size-3" />
           </span>
           <span>Emails are addressed to <span className="mono">{SUPPORT_EMAIL}</span>.</span>
