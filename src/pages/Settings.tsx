@@ -11,7 +11,7 @@ import { ClipboardCopy, Cloud, Lock, LogOut, RotateCw, ShieldCheck, Trash2, Volu
 import { removeVaultPassphrase, vaultUsesPassphrase } from "@/lib/vault";
 import { clearDeviceAuth, getDeviceAuthRecord, hasDeviceAuth, setupDeviceAuth, supportsDeviceAuth, verifyDeviceAuth } from "@/lib/deviceAuth";
 import { syncCloudProfile, type CloudProfileResult } from "@/lib/cloudProfile";
-import { normalizeOrganization, normalizeUser, useCurrentUserQuery, useOrganizationQuery, useOrganizationsQuery, userEmail } from "@/state/queries";
+import { normalizeOrganization, normalizeUser, useCurrentUserQuery, useOrganizationMembershipRolesQuery, useOrganizationQuery, useOrganizationsQuery, userEmail } from "@/state/queries";
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
@@ -57,19 +57,6 @@ function accountTypeLabel({ selectedOrganizationId, user, currentUserFailed }: {
   return "Connected API key";
 }
 
-function organizationRole(org: any) {
-  return firstText(
-    org?.role,
-    org?.org_role,
-    org?.organization_role,
-    org?.membership?.role,
-    org?.member?.role,
-    org?.permissions?.role,
-    org?.is_admin ? "admin" : "",
-    org?.is_owner ? "owner" : "",
-  );
-}
-
 export default function Settings() {
   const { apiKey, settings, updateSettings, signOut, forgetStoredKey, hasStoredVault, diagnostics, clearDiagnostics, clearLocalCache, refreshVaultState, selectedOrganizationId, playUiSound } = useApp();
   const navigate = useNavigate();
@@ -82,14 +69,19 @@ export default function Settings() {
   const activeOrg = organization || selectedOrgFromList;
   const email = userEmail(user);
   const userName = userNameFromPayload(user, email);
+  const membershipRoleQueries = useOrganizationMembershipRolesQuery(organizations.data?.organizations, user);
   const accountPlan = firstText(activeOrg?.plan, selectedOrgFromList?.plan, user?.plan);
   const accountType = accountTypeLabel({ selectedOrganizationId, user, currentUserFailed: !!currentUser.error });
   const selectedWorkspaceName = activeOrg?.name || activeOrg?.handle || selectedOrganizationId || "No organization selected";
-  const organizationRoles = useMemo(() => (organizations.data?.organizations || []).map((org: any) => ({
-    id: org.id,
-    name: org.name || org.handle || org.id,
-    role: organizationRole(org) || "not exposed",
-  })), [organizations.data?.organizations]);
+  const organizationRoles = (organizations.data?.organizations || []).map((org: any, index: number) => {
+    const roleQuery = membershipRoleQueries[index];
+    const queryError = roleQuery?.error as any;
+    return {
+      id: org.id,
+      name: org.name || org.handle || org.id,
+      role: roleQuery?.isLoading ? "loading…" : queryError ? (queryError.status ? `error ${queryError.status}` : "unavailable") : roleQuery?.data?.role || "not exposed",
+    };
+  });
   const lastFailed = diagnostics.find(d => !d.ok);
 
   const [usesPassphrase, setUsesPassphrase] = useState(false);
@@ -264,7 +256,7 @@ export default function Settings() {
         <Row title="Neon plan" desc="Shown from the selected organization detail when Neon exposes it through the API.">
           <span className="text-sm mono text-muted-foreground">{organizationDetail.isLoading ? "loading…" : planLabel(accountPlan)}</span>
         </Row>
-        <Row title="Organization roles" desc="All organizations returned by Neon and the membership role exposed for each one.">
+        <Row title="Organization roles" desc="Fetched from /organizations/{org_id}/members and matched to the current Neon user.">
           <div className="space-y-1 text-right">
             {organizations.isLoading ? <span className="text-sm mono text-muted-foreground">loading…</span> : organizationRoles.length ? organizationRoles.map(org => (
               <div key={org.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 text-xs">

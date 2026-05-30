@@ -1,4 +1,4 @@
-import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
+import { useQueries, useQuery, type UseQueryOptions } from "@tanstack/react-query";
 import { NeonService } from "@/lib/neon/service";
 import type { ApiMode } from "@/lib/neon/client";
 import { useApp } from "@/state/AppContext";
@@ -46,6 +46,56 @@ export function workspaceId(org: any) {
   return org?.id || org?.org_id;
 }
 
+function nestedString(value: any, paths: string[][]) {
+  for (const path of paths) {
+    let current = value;
+    for (const key of path) current = current?.[key];
+    if (typeof current === "string" && current.trim()) return current.trim();
+  }
+  return "";
+}
+
+function normalizeMemberEmail(entry: any) {
+  return nestedString(entry, [
+    ["user", "email"],
+    ["member", "user", "email"],
+    ["member", "email"],
+    ["email"],
+  ]).toLowerCase();
+}
+
+function normalizeMemberUserId(entry: any) {
+  return nestedString(entry, [
+    ["member", "user_id"],
+    ["user", "id"],
+    ["user_id"],
+    ["member", "user", "id"],
+  ]);
+}
+
+function normalizeMemberRole(entry: any) {
+  return nestedString(entry, [
+    ["member", "role"],
+    ["role"],
+    ["org_role"],
+    ["organization_role"],
+    ["membership", "role"],
+    ["member", "org_role"],
+  ]);
+}
+
+function findCurrentUserMembership(payload: any, user: NeonUser | null | undefined) {
+  const members = arrayFrom(payload, ["members", "organization_members", "items"]);
+  const currentEmail = userEmail(user).toLowerCase();
+  const currentUserId = (user as any)?.id || "";
+
+  return members.find((entry: any) => {
+    const memberUserId = normalizeMemberUserId(entry);
+    const memberEmail = normalizeMemberEmail(entry);
+    return (!!currentUserId && memberUserId === currentUserId) || (!!currentEmail && memberEmail === currentEmail);
+  }) || members.find((entry: any) => normalizeMemberRole(entry));
+}
+
 export function useCurrentUserQuery() {
   const { apiKey, settings } = useApp();
   return useQuery<any, NormalizedError>({
@@ -74,6 +124,32 @@ export function useOrganizationsQuery() {
       }
     },
     retry: (count, err) => !!err?.retryable && count < 2,
+  });
+}
+
+export function useOrganizationMembershipRolesQuery(organizations: WorkspaceOption[] | undefined, user: NeonUser | null | undefined) {
+  const { apiKey, settings } = useApp();
+  const currentEmail = userEmail(user).toLowerCase();
+  const currentUserId = (user as any)?.id || "";
+
+  return useQueries({
+    queries: (organizations || []).filter(org => !!org.id).map(org => ({
+      queryKey: ["organization-current-user-role", org.id, currentUserId || currentEmail || "current", settings.apiMode],
+      enabled: !!apiKey && !!org.id,
+      queryFn: async ({ signal }: { signal: AbortSignal }) => {
+        const payload = await NeonService.listOrganizationMembers({ ...ctxOf(apiKey, settings.apiMode), signal }, org.id);
+        const membership = findCurrentUserMembership(payload, user);
+        return {
+          orgId: org.id,
+          orgName: org.name,
+          role: normalizeMemberRole(membership) || "not exposed",
+          email: normalizeMemberEmail(membership),
+          userId: normalizeMemberUserId(membership),
+        };
+      },
+      retry: false,
+      staleTime: 60_000,
+    })),
   });
 }
 
