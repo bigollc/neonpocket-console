@@ -1,10 +1,23 @@
+interface Fetcher {
+  fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+}
+
 const DEFAULT_NEON_BASE = "https://console.neon.tech/api/v2";
+
+interface D1PreparedStatement {
+  bind(...values: unknown[]): { run(): Promise<unknown> };
+  run(): Promise<unknown>;
+}
+
+interface D1DatabaseBinding {
+  prepare(sql: string): D1PreparedStatement;
+}
 
 interface Env {
   /** Static Vite app assets generated into ./dist and bound by wrangler.jsonc. */
   ASSETS: Fetcher;
   /** Optional D1 binding for app profile/audit sync. The app works without it. */
-  DB?: any;
+  DB?: D1DatabaseBinding;
   /** Comma-separated browser origins allowed to call this Worker. Use exact origins, or * only during testing. */
   ALLOWED_ORIGINS?: string;
   /** Optional override for testing. Production should normally keep the default Neon Console API base. */
@@ -21,8 +34,6 @@ interface ForwardBody {
 interface AppProfileBody {
   userName?: string;
   email?: string;
-  keyHash?: string;
-  keyHint?: string;
   deviceAuthEnabled?: boolean;
   settings?: unknown;
   userAgent?: string;
@@ -32,6 +43,8 @@ interface AppProfileBody {
 
 const PROXY_PATH = "/api/neon-proxy";
 const PROFILE_PATH = "/api/app-profile";
+const MAX_JSON_BODY_BYTES = 64 * 1024;
+const MAX_SETTINGS_JSON_BYTES = 16 * 1024;
 
 const json = (body: unknown, status: number, headers: HeadersInit = {}) =>
   new Response(JSON.stringify(body), {
@@ -74,6 +87,36 @@ function safeBase(env: Env) {
   return value || DEFAULT_NEON_BASE;
 }
 
+
+function bearerToken(request: Request) {
+  const auth = request.headers.get("Authorization") || "";
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  const token = match?.[1]?.trim() || "";
+  return token || null;
+}
+
+function bytesToHex(bytes: Uint8Array) {
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return bytesToHex(new Uint8Array(digest));
+}
+
+function keyHintFromToken(token: string) {
+  if (!token) return "";
+  return token.length <= 12 ? "••••" : `${token.slice(0, 5)}…${token.slice(-4)}`;
+}
+
+async function readJsonBody<T>(request: Request): Promise<T> {
+  const contentLength = Number(request.headers.get("Content-Length") || "0");
+  if (contentLength > MAX_JSON_BODY_BYTES) throw new Error("Request body is too large");
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_JSON_BODY_BYTES) throw new Error("Request body is too large");
+  return JSON.parse(text || "{}");
+}
+
 function clientIp(request: Request) {
   return request.headers.get("CF-Connecting-IP") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
 }
@@ -82,25 +125,29 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error || "Unknown error");
 }
 
-function normalizeProfile(body: AppProfileBody) {
-  const email = String(body.email || "").slice(0, 320);
-  const keyHash = String(body.keyHash || "").slice(0, 128);
-  const userId = keyHash || email || crypto.randomUUID();
+async function normalizeProfile(body: AppProfileBody, neonApiKey: string) {
+  const email = String(body.email || "").trim().slice(0, 320);
+  const keyHash = await sha256Hex(neonApiKey);
+  const settingsJson = JSON.stringify(body.settings && typeof body.settings === "object" ? body.settings : {});
+  if (new TextEncoder().encode(settingsJson).byteLength > MAX_SETTINGS_JSON_BYTES) {
+    throw new Error("Settings payload is too large");
+  }
+
   return {
-    userId,
-    userName: String(body.userName || email || "Neon user").slice(0, 200),
+    userId: keyHash,
+    userName: String(body.userName || email || "Neon user").trim().slice(0, 200),
     email,
     keyHash,
-    keyHint: String(body.keyHint || "").slice(0, 32),
+    keyHint: keyHintFromToken(neonApiKey),
     deviceAuthEnabled: body.deviceAuthEnabled ? 1 : 0,
-    settingsJson: JSON.stringify(body.settings || {}),
+    settingsJson,
     userAgent: String(body.userAgent || "").slice(0, 600),
     language: String(body.language || "").slice(0, 80),
     timezone: String(body.timezone || "").slice(0, 120),
   };
 }
 
-async function runOptionalSchemaPatch(db: any, sql: string) {
+async function runOptionalSchemaPatch(db: D1DatabaseBinding, sql: string) {
   try {
     await db.prepare(sql).run();
   } catch {
@@ -109,7 +156,7 @@ async function runOptionalSchemaPatch(db: any, sql: string) {
   }
 }
 
-async function ensureProfileSchema(db: any) {
+async function ensureProfileSchema(db: D1DatabaseBinding) {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS app_profiles (
       user_id TEXT PRIMARY KEY,
@@ -153,18 +200,29 @@ async function handleAppProfile(request: Request, env: Env) {
   if (!cors) return json({ error: "Origin is not allowed" }, 403);
   if (request.method !== "POST") return json({ error: "Only POST is supported" }, 405, cors);
 
+  const neonApiKey = bearerToken(request);
+  if (!neonApiKey) {
+    return json({ ok: false, stored: false, error: "Missing Authorization: Bearer <NEON_API_KEY>" }, 401, cors);
+  }
+
   if (!env.DB) {
     return json({ ok: true, stored: false, reason: "D1 binding is not configured" }, 200, cors);
   }
 
   let body: AppProfileBody;
   try {
-    body = await request.json();
-  } catch {
-    return json({ ok: false, stored: false, error: "Invalid JSON body" }, 400, cors);
+    body = await readJsonBody<AppProfileBody>(request);
+  } catch (error) {
+    const message = errorMessage(error);
+    return json({ ok: false, stored: false, error: message === "Request body is too large" ? message : "Invalid JSON body" }, 400, cors);
   }
 
-  const profile = normalizeProfile(body);
+  let profile: Awaited<ReturnType<typeof normalizeProfile>>;
+  try {
+    profile = await normalizeProfile(body, neonApiKey);
+  } catch (error) {
+    return json({ ok: false, stored: false, error: errorMessage(error) }, 400, cors);
+  }
   const now = new Date().toISOString();
   const ip = clientIp(request);
 
@@ -209,14 +267,13 @@ async function handleAppProfile(request: Request, env: Env) {
       VALUES (?, ?, ?, ?, ?, ?)
     `).bind(crypto.randomUUID(), profile.userId, "profile_synced", ip, profile.userAgent, now).run();
 
-    return json({ ok: true, stored: true, profile_id: profile.userId, at: now }, 200, cors);
+    return json({ ok: true, stored: true, at: now }, 200, cors);
   } catch (error) {
     return json({
       ok: false,
       stored: false,
       error: "D1 profile sync failed",
-      detail: errorMessage(error),
-      hint: "Check the DB binding, database id, and whether old tables need a manual migration/drop if their schema differs.",
+      hint: "Check the DB binding and database id. Server logs contain the internal failure detail.",
     }, 500, cors);
   }
 }
@@ -238,14 +295,14 @@ async function handleNeonProxy(request: Request, env: Env) {
     return json({ error: "Only POST is supported" }, 405, cors);
   }
 
-  const auth = request.headers.get("Authorization");
-  if (!auth || !/^Bearer\s+\S+/i.test(auth)) {
+  const auth = request.headers.get("Authorization") || "";
+  if (!bearerToken(request)) {
     return json({ error: "Missing Authorization: Bearer <NEON_API_KEY>" }, 401, cors);
   }
 
   let payload: ForwardBody;
   try {
-    payload = await request.json();
+    payload = await readJsonBody<ForwardBody>(request);
   } catch {
     return json({ error: "Invalid JSON body" }, 400, cors);
   }
@@ -284,8 +341,8 @@ async function handleNeonProxy(request: Request, env: Env) {
       },
       body: payload.body !== undefined ? JSON.stringify(payload.body) : undefined,
     });
-  } catch (error: any) {
-    return json({ error: error?.message || "Neon upstream request failed" }, 502, cors);
+  } catch (error) {
+    return json({ error: errorMessage(error) || "Neon upstream request failed" }, 502, cors);
   }
 
   const responseHeaders = new Headers(cors);

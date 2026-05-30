@@ -44,9 +44,9 @@ When `Settings -> API & Cloud profile -> Cloud profile sync` is enabled, the app
 
 ## What is not stored
 
-The raw Neon API key is not stored in D1.
+The raw Neon API key is not stored in D1. The profile sync endpoint requires `Authorization: Bearer <NEON_API_KEY>` and derives the D1 `user_id` / `neon_key_hash` server-side from that key, so clients cannot choose another user's profile id or overwrite another profile by submitting a forged hash.
 
-The raw Neon API key is also not stored in Worker environment variables. It remains user-provided and is only forwarded for the current Neon API request.
+The raw Neon API key is also not stored in Worker environment variables. It remains user-provided and is only used for the current request.
 
 ## Create a D1 database
 
@@ -123,3 +123,4 @@ For production:
 2. Enable Device authentication in Settings.
 3. Enable Cloud profile sync only if you want profile/audit analytics.
 4. Use D1 for app metadata only, not as a secret vault.
+5. Keep `ALLOWED_ORIGINS` limited to exact production origins; use `*` only for isolated testing.

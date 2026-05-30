@@ -16,11 +16,11 @@ Open the app, paste your Neon Console API key (generate one from the Neon Consol
 
 ## Architecture
 
-- **Typed Neon API client** (`src/lib/neon/`) with Auto transport: direct browser calls to `https://console.neon.tech/api/v2/*` first, then a stateless Cloudflare Worker proxy fallback when the browser blocks direct CORS/preflight.
+- **Typed Neon API client** (`src/lib/neon/`) using the configured proxy endpoint so Neon API keys stay out of URLs and browser CORS behavior is consistent.
 - **Cloudflare Worker Neon proxy** (`workers/neon-proxy.ts`): a stateless relay that forwards only the current request to Neon's Console API and never stores raw API keys, request bodies, or responses.
 - **Encrypted local vault** (`src/lib/vault.ts`): IndexedDB + Web Crypto AES-GCM. Optional PBKDF2 passphrase. Forget-key and clear-cache controls in Settings.
 - **Device authentication gate** (`src/lib/deviceAuth.ts`): optional platform authenticator unlock for the local vault. On iPhone this is Face ID, on supported Apple devices Touch ID, and on supported Windows devices Windows Hello.
-- **Optional Cloudflare D1 profile sync** (`/api/app-profile`): stores app profile/audit metadata only when enabled and when a D1 binding exists. It stores key hash + key hint, not the raw Neon API key.
+- **Optional Cloudflare D1 profile sync** (`/api/app-profile`): stores app profile/audit metadata only when enabled and when a D1 binding exists. The endpoint requires the current Bearer key, derives the key hash server-side, and never stores the raw Neon API key.
 - **Organization-first workspace flow**: project tools stay locked until a workspace is explicitly selected.
 - **TanStack Query** for all remote data, with AbortController and operation polling (running operations are polled, finished/failed stop).
 - **Normalized errors** everywhere: status, message, request id, route, timestamp, retryable.
@@ -145,7 +145,7 @@ Settings → API transport → Proxy
 - API keys and JWTs are never logged. Authorization headers are redacted from diagnostics.
 - Secrets never appear in URLs.
 - The Cloudflare Worker proxy does not persist raw keys, request bodies, or Neon responses.
-- Optional D1 profile sync stores only app metadata, key hash, and key hint.
+- Optional D1 profile sync requires Bearer authorization, derives profile ownership server-side from the Neon API key hash, and stores only app metadata, key hash, and key hint.
 - The Worker allowlists browser origins with `ALLOWED_ORIGINS`.
 - Encrypted vault is local-only. "Forget key" wipes ciphertext + metadata.
 - Device authentication can protect local vault unlocks with Face ID / Touch ID / Windows Hello where supported.
