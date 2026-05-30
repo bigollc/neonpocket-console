@@ -11,5 +11,12 @@
   "vars": {
     "ALLOWED_ORIGINS": "",
     "NEON_BASE_URL": "https://console.neon.tech/api/v2"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "neon",
+      "database_id": "REPLACE_WITH_CLOUDFLARE_D1_DATABASE_ID"
+    }
+  ]
 }
