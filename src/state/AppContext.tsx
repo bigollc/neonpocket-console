@@ -50,6 +50,7 @@ interface AppState {
 
 const SETTINGS_KEY = "neonpocket.settings.v1";
 const SELECT_KEY = "neonpocket.select.v1";
+const LEGACY_DEFAULT_WORKSPACE_ID = "__default_workspace__";
 
 const defaultSettings: Settings = {
   theme: "system",
@@ -73,7 +74,13 @@ function loadSettings(): Settings {
   }
 }
 function loadSelect() {
-  try { return JSON.parse(localStorage.getItem(SELECT_KEY) || "{}"); } catch { return {}; }
+  try {
+    const selected = JSON.parse(localStorage.getItem(SELECT_KEY) || "{}");
+    if (selected.organizationId === LEGACY_DEFAULT_WORKSPACE_ID) return {};
+    return selected;
+  } catch {
+    return {};
+  }
 }
 
 function applyTheme(t: Theme) {
@@ -180,7 +187,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setSelectedOrganizationId = useCallback((id: string | null) => {
-    setSelectedOrganizationIdState(id);
+    setSelectedOrganizationIdState(id === LEGACY_DEFAULT_WORKSPACE_ID ? null : id);
     setSelectedProjectIdState(null);
     setSelectedBranchIdState(null);
     setSelectedDatabase(null);
