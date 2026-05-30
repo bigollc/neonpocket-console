@@ -12,6 +12,8 @@ export interface CloudProfileResult {
   status: number;
   reason?: string;
   message?: string;
+  detail?: string;
+  hint?: string;
 }
 
 function bytesToHex(bytes: Uint8Array) {
@@ -56,6 +58,8 @@ export async function syncCloudProfile(payload: CloudProfilePayload): Promise<Cl
       status: response.status,
       reason: body?.reason,
       message: body?.error || body?.message,
+      detail: body?.detail,
+      hint: body?.hint,
     };
   } catch (error: any) {
     return {
