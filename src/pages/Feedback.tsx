@@ -5,49 +5,210 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Copy, Mail } from "lucide-react";
+import { Copy, Info, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 const SUPPORT_EMAIL = "info@webusta.org";
 
+function browserName(userAgent: string) {
+  if (/Edg\//i.test(userAgent)) return "Microsoft Edge";
+  if (/CriOS\//i.test(userAgent)) return "Chrome iOS";
+  if (/Chrome\//i.test(userAgent)) return "Google Chrome";
+  if (/FxiOS\//i.test(userAgent)) return "Firefox iOS";
+  if (/Firefox\//i.test(userAgent)) return "Firefox";
+  if (/OPR\//i.test(userAgent)) return "Opera";
+  if (/Safari\//i.test(userAgent) && /Version\//i.test(userAgent)) return "Safari";
+  return "Unknown browser";
+}
+
+function osName(userAgent: string, platform: string) {
+  if (/iPhone|iPad|iPod/i.test(userAgent)) {
+    const version = userAgent.match(/OS ([\d_]+)/i)?.[1]?.replace(/_/g, ".");
+    return version ? `iOS ${version}` : "iOS";
+  }
+  if (/Android/i.test(userAgent)) {
+    const version = userAgent.match(/Android ([\d.]+)/i)?.[1];
+    return version ? `Android ${version}` : "Android";
+  }
+  if (/Windows NT/i.test(userAgent)) return "Windows";
+  if (/Mac OS X/i.test(userAgent)) return "macOS";
+  if (/Linux/i.test(userAgent) || /Linux/i.test(platform)) return "Linux";
+  return platform || "Unknown OS";
+}
+
+function deviceType(userAgent: string) {
+  if (/iPhone|Android.*Mobile/i.test(userAgent)) return "Phone";
+  if (/iPad|Tablet|Android(?!.*Mobile)/i.test(userAgent)) return "Tablet";
+  return "Desktop / browser";
+}
+
+function boolLabel(value: boolean) {
+  return value ? "enabled" : "disabled";
+}
+
 export default function Feedback() {
-  const { selectedProjectId, selectedBranchId, settings, diagnostics, playUiSound } = useApp();
+  const {
+    selectedOrganizationId,
+    selectedProjectId,
+    selectedBranchId,
+    selectedDatabase,
+    settings,
+    diagnostics,
+    playUiSound,
+  } = useApp();
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
+  const canSubmit = title.trim().length > 0 && details.trim().length > 0;
   const lastFailed = diagnostics.find(d => !d.ok);
+  const recentDiagnostics = diagnostics.slice(0, 8).map(d => ({
+    ts: d.ts,
+    ok: d.ok,
+    status: d.status,
+    method: d.method,
+    route: d.route,
+    ms: d.ms,
+    error: d.errorMessage || null,
+  }));
+
+  const device = useMemo(() => {
+    const nav = window.navigator;
+    const screenInfo = window.screen;
+    const viewport = `${window.innerWidth}x${window.innerHeight}`;
+    const screenResolution = `${screenInfo.width}x${screenInfo.height}`;
+    const pixelRatio = window.devicePixelRatio || 1;
+    const ua = nav.userAgent || "";
+
+    return {
+      device_type: deviceType(ua),
+      operating_system: osName(ua, nav.platform || ""),
+      browser: browserName(ua),
+      platform: nav.platform || null,
+      language: nav.language || null,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+      viewport,
+      screen_resolution: screenResolution,
+      device_pixel_ratio: pixelRatio,
+      user_agent: ua,
+    };
+  }, []);
+
   const diag = useMemo(() => ({
     app: "NeonPocket Console 0.1.0",
+    generated_at: new Date().toISOString(),
     route: window.location.pathname,
-    project_id: selectedProjectId,
-    branch_id: selectedBranchId,
-    api_mode: settings.apiMode,
-    last_status: diagnostics[0]?.status ?? null,
-    last_failed: lastFailed ? { status: lastFailed.status, route: lastFailed.route, ms: lastFailed.ms } : null,
-  }), [selectedProjectId, selectedBranchId, settings.apiMode, diagnostics, lastFailed]);
+    context: {
+      organization_id: selectedOrganizationId,
+      project_id: selectedProjectId,
+      branch_id: selectedBranchId,
+      database: selectedDatabase,
+      api_mode: settings.apiMode,
+      theme: settings.theme,
+      motion: settings.motion,
+      sounds: boolLabel(settings.sounds),
+      local_history: boolLabel(settings.localHistory),
+      cloud_profile_sync: boolLabel(settings.cloudProfileSync),
+      mobile_bottom_nav: boolLabel(settings.mobileBottomNav),
+    },
+    user_environment: device,
+    diagnostics_summary: {
+      total_events: diagnostics.length,
+      failed_events: diagnostics.filter(d => !d.ok).length,
+      last_status: diagnostics[0]?.status ?? null,
+      last_route: diagnostics[0]?.route ?? null,
+      last_failed: lastFailed ? {
+        status: lastFailed.status,
+        method: lastFailed.method,
+        route: lastFailed.route,
+        ms: lastFailed.ms,
+        error: lastFailed.errorMessage || null,
+        ts: lastFailed.ts,
+      } : null,
+      recent_events: recentDiagnostics,
+    },
+  }), [selectedOrganizationId, selectedProjectId, selectedBranchId, selectedDatabase, settings, diagnostics, lastFailed, recentDiagnostics, device]);
 
-  const template = `## ${title || "Feedback"}
+  const humanSummary = `User/session summary:
+- Device: ${device.device_type}
+- OS: ${device.operating_system}
+- Browser: ${device.browser}
+- Screen: ${device.screen_resolution} @ ${device.device_pixel_ratio}x
+- Viewport: ${device.viewport}
+- Timezone: ${device.timezone || "unknown"}
+- Route: ${window.location.pathname}
+- Organization: ${selectedOrganizationId || "not selected"}
+- Project: ${selectedProjectId || "not selected"}
+- Branch: ${selectedBranchId || "not selected"}
+- Database: ${selectedDatabase || "not selected"}
+- API mode: ${settings.apiMode}
+- Diagnostics: ${diagnostics.length} recent event(s), ${diagnostics.filter(d => !d.ok).length} failed event(s)
+- Last API status: ${diagnostics[0]?.status ?? "none"}
+- Last failed route: ${lastFailed ? `${lastFailed.status} · ${lastFailed.route}` : "none"}`;
 
-${details || "(Describe the issue or suggestion)"}
+  const template = `## ${title || "Feedback title required"}
+
+${details || "Feedback details required before copying or opening email."}
 
 ---
-Diagnostics (no secrets included):
+${humanSummary}
+
+---
+Diagnostics payload (no API keys, JWTs, request bodies, or secrets included):
 \`\`\`json
 ${JSON.stringify(diag, null, 2)}
 \`\`\``;
 
-  const mailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("NeonPocket Feedback: " + (title || ""))}&body=${encodeURIComponent(template)}`;
+  const mailto = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("NeonPocket Feedback: " + title.trim())}&body=${encodeURIComponent(template)}`;
+
+  function requireFields() {
+    if (canSubmit) return true;
+    playUiSound("warning");
+    toast.error("Title and details are required", { description: "Add both fields before copying or opening email." });
+    return false;
+  }
+
+  async function copyTemplate() {
+    if (!requireFields()) return;
+    await navigator.clipboard.writeText(template);
+    playUiSound("success");
+    toast.success("Copied issue template");
+  }
+
+  function openEmail(event: React.MouseEvent<HTMLAnchorElement>) {
+    if (!requireFields()) {
+      event.preventDefault();
+      return;
+    }
+    playUiSound("nav");
+  }
 
   return (
     <Page>
-      <PageHeader title="Feedback" description="Local-only composer. Diagnostics never contain API keys, JWTs, or request bodies." />
+      <PageHeader title="Feedback" description="Local-only composer. Diagnostics never contain API keys, JWTs, request bodies, or secrets." />
       <div className="space-y-3 max-w-2xl">
-        <div className="space-y-1.5"><Label>Title</Label><Input value={title} onChange={e => setTitle(e.target.value)} /></div>
-        <div className="space-y-1.5"><Label>Details</Label><Textarea value={details} onChange={e => setDetails(e.target.value)} className="min-h-[160px]" /></div>
-        <div className="flex gap-2">
-          <Button onClick={() => { navigator.clipboard.writeText(template); playUiSound("success"); toast.success("Copied issue template"); }}><Copy className="size-4 mr-2" />Copy</Button>
-          <Button variant="outline" asChild><a href={mailto} onClick={() => playUiSound("nav")}><Mail className="size-4 mr-2" />Open email</a></Button>
+        <div className="space-y-1.5">
+          <Label>Title</Label>
+          <Input value={title} onChange={e => setTitle(e.target.value)} placeholder="Short title for the issue or suggestion" />
         </div>
-        <div className="text-xs text-muted-foreground">Emails are addressed to <span className="mono">{SUPPORT_EMAIL}</span>.</div>
+        <div className="space-y-1.5">
+          <Label>Details</Label>
+          <Textarea value={details} onChange={e => setDetails(e.target.value)} className="min-h-[160px]" placeholder="What happened, what did you expect, and what were you trying to do?" />
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={copyTemplate} disabled={!canSubmit}>
+            <Copy className="size-4 mr-2" />Copy
+          </Button>
+          <Button variant="outline" asChild>
+            <a href={canSubmit ? mailto : undefined} aria-disabled={!canSubmit} onClick={openEmail} className={!canSubmit ? "pointer-events-none opacity-50" : undefined}>
+              <Mail className="size-4 mr-2" />Open email
+            </a>
+          </Button>
+        </div>
+        <div className="flex items-start gap-2 rounded-md border bg-card/70 p-3 text-xs text-muted-foreground">
+          <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border text-foreground">
+            <Info className="size-3" />
+          </span>
+          <span>Emails are addressed to <span className="mono">{SUPPORT_EMAIL}</span>.</span>
+        </div>
         <div className="hairline rounded-md bg-card">
           <div className="px-3 py-2 border-b border-border text-xs">Preview</div>
           <pre className="p-3 text-[11px] mono whitespace-pre-wrap">{template}</pre>
