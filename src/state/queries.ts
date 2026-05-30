@@ -160,6 +160,40 @@ export function useOrganizationApiKeysQuery(orgId: string | null) {
   });
 }
 
+function monthStartIso() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0)).toISOString();
+}
+
+export function useConsumptionHistoryQuery({ projectIds, orgId }: { projectIds?: string[]; orgId?: string }) {
+  const { apiKey, settings } = useApp();
+  const ids = (projectIds || []).filter(Boolean).slice(0, 100);
+  const metrics = [
+    "compute_unit_seconds",
+    "root_branch_bytes_month",
+    "child_branch_bytes_month",
+    "instant_restore_bytes_month",
+    "public_network_transfer_bytes",
+    "private_network_transfer_bytes",
+    "snapshot_storage_bytes_month",
+  ].join(",");
+
+  return useQuery<any, NormalizedError>({
+    queryKey: ["consumption-history-v2", orgId || "default", ids.join(","), settings.apiMode],
+    enabled: !!apiKey && (!!orgId || ids.length > 0),
+    queryFn: ({ signal }) => NeonService.consumptionHistoryProjectsV2({ ...ctxOf(apiKey, settings.apiMode), signal }, {
+      org_id: orgId,
+      project_ids: ids.length ? ids.join(",") : undefined,
+      from: monthStartIso(),
+      to: new Date().toISOString(),
+      granularity: "monthly",
+      metrics,
+      limit: 100,
+    }),
+    retry: false,
+  });
+}
+
 export function useGenericQuery<T>(key: any[], fn: (signal: AbortSignal) => Promise<T>, enabled = true, options?: Partial<UseQueryOptions<T, NormalizedError>>) {
   return useQuery<T, NormalizedError>({
     queryKey: key,

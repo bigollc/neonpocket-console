@@ -82,6 +82,8 @@ export const NeonService = {
     callNeon<NeonApiKey[]>(`/api_keys`, { ...c }),
   consumption: (c: Ctx, query?: Record<string, string>) =>
     callNeon<NeonConsumption>(`/consumption/projects`, { ...c, query }),
+  consumptionHistoryProjectsV2: (c: Ctx, query: Record<string, string | number | boolean | undefined>) =>
+    callNeon<NeonConsumption>(`/consumption_history/v2/projects`, { ...c, query }),
   listRegions: (c: Ctx) =>
     callNeon<any>(`/regions`, { ...c }),
 };
