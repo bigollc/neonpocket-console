@@ -7,6 +7,7 @@
 
 const NEON_BASE = "https://console.neon.tech/api/v2";
 const MAX_JSON_BODY_BYTES = 64 * 1024;
+const MAX_PROXY_PATH_CHARS = 2048;
 
 declare const process: { env?: Record<string, string | undefined> } | undefined;
 
@@ -50,8 +51,39 @@ function corsHeaders(req: Request) {
 const json = (body: unknown, status: number, headers: HeadersInit = {}) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", ...headers },
+    headers: { "Content-Type": "application/json", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store", ...headers },
   });
+
+
+function hasUnsafePathCharacter(value: string) {
+  return Array.from(value).some(char => {
+    const code = char.charCodeAt(0);
+    return code <= 31 || code === 127 || char === "\\" || char === "?" || char === "#";
+  });
+}
+
+function normalizeProxyPath(rawPath: unknown) {
+  const path = String(rawPath || "");
+  if (!path.startsWith("/")) throw new Error("Path must start with /");
+  if (path.length > MAX_PROXY_PATH_CHARS) throw new Error("Path is too long");
+  if (hasUnsafePathCharacter(path) || path.includes("://")) throw new Error("Disallowed path");
+  if (/%2f|%5c/i.test(path)) throw new Error("Disallowed path");
+
+  let decoded = path;
+  try { decoded = decodeURIComponent(path); } catch { throw new Error("Disallowed path"); }
+  if (hasUnsafePathCharacter(decoded) || decoded.includes("://")) throw new Error("Disallowed path");
+  if (decoded.split("/").some(segment => segment === "." || segment === "..")) throw new Error("Disallowed path");
+  return path;
+}
+
+function safeUpstreamUrl(path: string) {
+  const base = new URL(NEON_BASE);
+  const url = new URL(`${base.pathname.replace(/\/$/, "")}${path}`, base.origin);
+  if (url.origin !== base.origin || !url.pathname.startsWith(`${base.pathname.replace(/\/$/, "")}/`)) {
+    throw new Error("Disallowed path");
+  }
+  return url;
+}
 
 async function readJsonBody<T>(req: Request): Promise<T> {
   const contentLength = Number(req.headers.get("Content-Length") || "0");
@@ -75,7 +107,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const auth = req.headers.get("authorization") || "";
-  if (!/^Bearer\s+\S+/i.test(auth)) {
+  if (!/^Bearer\s+[^\r\n]+$/i.test(auth)) {
     return json({ error: "Missing Authorization: Bearer <NEON_API_KEY>" }, 401, cors);
   }
 
@@ -91,16 +123,14 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: "Unsupported method" }, 405, cors);
   }
 
-  const path = String(payload.path || "");
-  if (!path.startsWith("/")) {
-    return json({ error: "Path must start with /" }, 400, cors);
+  let path: string;
+  let url: URL;
+  try {
+    path = normalizeProxyPath(payload.path);
+    url = safeUpstreamUrl(path);
+  } catch (error) {
+    return json({ error: errorMessage(error) }, 400, cors);
   }
-
-  if (path.includes("..") || path.includes("://")) {
-    return json({ error: "Disallowed path" }, 400, cors);
-  }
-
-  const url = new URL(NEON_BASE + path);
   if (payload.query) {
     for (const [k, v] of Object.entries(payload.query)) {
       if (v !== undefined && v !== null && v !== "") url.searchParams.append(k, String(v));
@@ -125,6 +155,8 @@ export default async function handler(req: Request): Promise<Response> {
   const text = await upstream.text();
   const headers = new Headers(cors);
   headers.set("Content-Type", upstream.headers.get("content-type") || "application/json");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Cache-Control", "no-store");
   const reqId = upstream.headers.get("neon-request-id") || upstream.headers.get("x-request-id");
   if (reqId) headers.set("neon-request-id", reqId);
   return new Response(text, { status: upstream.status, headers });

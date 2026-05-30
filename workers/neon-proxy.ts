@@ -45,12 +45,15 @@ const PROXY_PATH = "/api/neon-proxy";
 const PROFILE_PATH = "/api/app-profile";
 const MAX_JSON_BODY_BYTES = 64 * 1024;
 const MAX_SETTINGS_JSON_BYTES = 16 * 1024;
+const MAX_PROXY_PATH_CHARS = 2048;
 
 const json = (body: unknown, status: number, headers: HeadersInit = {}) =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
       "Content-Type": "application/json",
+      "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "no-store",
       ...headers,
     },
   });
@@ -87,10 +90,41 @@ function safeBase(env: Env) {
   return value || DEFAULT_NEON_BASE;
 }
 
+function hasUnsafePathCharacter(value: string) {
+  return Array.from(value).some(char => {
+    const code = char.charCodeAt(0);
+    return code <= 31 || code === 127 || char === "\\" || char === "?" || char === "#";
+  });
+}
+
+function normalizeProxyPath(rawPath: unknown) {
+  const path = String(rawPath || "");
+  if (!path.startsWith("/")) throw new Error("Path must start with /");
+  if (path.length > MAX_PROXY_PATH_CHARS) throw new Error("Path is too long");
+  if (hasUnsafePathCharacter(path) || path.includes("://")) throw new Error("Disallowed path");
+  if (/%2f|%5c/i.test(path)) throw new Error("Disallowed path");
+
+  let decoded = path;
+  try { decoded = decodeURIComponent(path); } catch { throw new Error("Disallowed path"); }
+  if (hasUnsafePathCharacter(decoded) || decoded.includes("://")) throw new Error("Disallowed path");
+  if (decoded.split("/").some(segment => segment === "." || segment === "..")) throw new Error("Disallowed path");
+  return path;
+}
+
+function safeUpstreamUrl(env: Env, path: string) {
+  const base = new URL(safeBase(env));
+  const apiRoot = base.pathname.replace(/\/$/, "");
+  const url = new URL(`${apiRoot}${path}`, base.origin);
+  if (url.origin !== base.origin || !url.pathname.startsWith(`${apiRoot}/`)) {
+    throw new Error("Disallowed path");
+  }
+  return url;
+}
+
 
 function bearerToken(request: Request) {
   const auth = request.headers.get("Authorization") || "";
-  const match = auth.match(/^Bearer\s+(.+)$/i);
+  const match = auth.match(/^Bearer\s+([^\r\n]+)$/i);
   const token = match?.[1]?.trim() || "";
   return token || null;
 }
@@ -312,16 +346,14 @@ async function handleNeonProxy(request: Request, env: Env) {
     return json({ error: "Unsupported method" }, 405, cors);
   }
 
-  const path = String(payload.path || "");
-  if (!path.startsWith("/")) {
-    return json({ error: "Path must start with /" }, 400, cors);
+  let path: string;
+  let upstreamUrl: URL;
+  try {
+    path = normalizeProxyPath(payload.path);
+    upstreamUrl = safeUpstreamUrl(env, path);
+  } catch (error) {
+    return json({ error: errorMessage(error) }, 400, cors);
   }
-
-  if (path.includes("..") || path.includes("://")) {
-    return json({ error: "Disallowed path" }, 400, cors);
-  }
-
-  const upstreamUrl = new URL(`${safeBase(env)}${path}`);
   if (payload.query) {
     for (const [key, value] of Object.entries(payload.query)) {
       if (value !== undefined && value !== null && value !== "") {
@@ -347,6 +379,8 @@ async function handleNeonProxy(request: Request, env: Env) {
 
   const responseHeaders = new Headers(cors);
   responseHeaders.set("Content-Type", upstream.headers.get("Content-Type") || "application/json");
+  responseHeaders.set("X-Content-Type-Options", "nosniff");
+  responseHeaders.set("Cache-Control", "no-store");
 
   const neonRequestId = upstream.headers.get("neon-request-id") || upstream.headers.get("x-request-id");
   if (neonRequestId) responseHeaders.set("neon-request-id", neonRequestId);

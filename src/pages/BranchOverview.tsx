@@ -55,7 +55,7 @@ export default function BranchOverview() {
     <Page>
       <PageHeader title="Branch Overview" description={branch?.name} />
 
-      <div className="grid md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-3 overflow-x-auto pb-1">
         <Stat label="State" value={<span className="inline-flex items-center gap-1.5"><StatusDot status={branch?.current_state} />{branch?.current_state || "—"}</span>} />
         <Stat label="Databases" value={databases.data?.databases?.length ?? "—"} />
         <Stat label="Roles" value={roles.data?.roles?.length ?? "—"} />
@@ -140,7 +140,7 @@ export default function BranchOverview() {
 }
 
 function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div className="hairline rounded-lg p-4 bg-card"><div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div><div className="text-lg font-semibold mt-1">{value}</div></div>;
+  return <div className="hairline rounded-lg p-4 bg-card min-w-[9rem]"><div className="text-[11px] uppercase tracking-wider text-muted-foreground whitespace-nowrap">{label}</div><div className="text-lg font-semibold mt-1 whitespace-nowrap">{value}</div></div>;
 }
 function Panel({ title, actions, children }: any) {
   return (

@@ -1,6 +1,7 @@
 import { Page, PageHeader } from "@/layout/PageHeader";
 import { useApp, useNeonCtx } from "@/state/AppContext";
 import { callNeon } from "@/lib/neon/client";
+import { neonPathSegment as seg } from "@/lib/neon/path";
 import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -13,7 +14,7 @@ export default function Masking() {
   const q = useQuery({
     queryKey: ["anon", selectedProjectId, selectedBranchId],
     enabled: !!ctx.apiKey && !!selectedProjectId && !!selectedBranchId,
-    queryFn: ({ signal }) => callNeon(`/projects/${selectedProjectId}/branches/${selectedBranchId}/anonymization`, { ...ctx as any, signal }),
+    queryFn: ({ signal }) => callNeon(`/projects/${seg(selectedProjectId)}/branches/${seg(selectedBranchId)}/anonymization`, { ...ctx as any, signal }),
   });
   return (
     <Page>
