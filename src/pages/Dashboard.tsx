@@ -12,13 +12,14 @@ import { StatusDot } from "@/components/ui/status-dot";
 import { NeonService } from "@/lib/neon/service";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/state/AppContext";
-import { DEFAULT_WORKSPACE_ID, useOrganizationsQuery, useProjectsQuery, useConsumptionHistoryQuery } from "@/state/queries";
+import { useOrganizationsQuery, useProjectsQuery, useConsumptionHistoryQuery } from "@/state/queries";
 
-function Stat({ label, value, hint, icon: Icon, muted = false, restricted = false }: { label: string; value: React.ReactNode; hint?: React.ReactNode; icon?: any; muted?: boolean; restricted?: boolean }) {
+function Stat({ label, value, hint, icon: Icon, muted = false, restricted = false, compact = false }: { label: string; value: React.ReactNode; hint?: React.ReactNode; icon?: any; muted?: boolean; restricted?: boolean; compact?: boolean }) {
   return (
     <div
       className={cn(
-        "relative overflow-hidden hairline rounded-lg p-4 bg-card transition-opacity",
+        "relative overflow-hidden hairline rounded-lg bg-card transition-opacity",
+        compact ? "p-2.5 min-h-20" : "p-4",
         muted && "opacity-55",
         restricted && "border-destructive/30",
       )}
@@ -28,11 +29,11 @@ function Stat({ label, value, hint, icon: Icon, muted = false, restricted = fals
     >
       {restricted && <div className="pointer-events-none absolute inset-0 bg-card/35" />}
       <div className="relative flex items-center justify-between gap-2">
-        <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{label}</div>
-        {Icon && <Icon className="size-4 text-muted-foreground" />}
+        <div className={cn("text-muted-foreground uppercase tracking-wider", compact ? "text-[9px]" : "text-[11px]")}>{label}</div>
+        {Icon && <Icon className={cn("text-muted-foreground", compact ? "size-3.5" : "size-4")} />}
       </div>
-      <div className="relative text-2xl font-semibold mt-1 tabular-nums">{value}</div>
-      {hint && <div className="relative text-[11px] text-muted-foreground mt-1">{hint}</div>}
+      <div className={cn("relative font-semibold mt-1 tabular-nums", compact ? "text-base" : "text-2xl")}>{value}</div>
+      {hint && <div className={cn("relative text-muted-foreground mt-1 leading-tight", compact ? "text-[9px] line-clamp-2" : "text-[11px]")}>{hint}</div>}
     </div>
   );
 }
@@ -73,10 +74,10 @@ function newestTimestamp(item: any) {
 }
 
 function usageRestrictionHint(error: any) {
-  if (!error) return "Select a workspace to load usage.";
-  if ([401, 403].includes(error?.status)) return "Not available for this plan or API key scope.";
-  if (error?.status === 404) return "Consumption history is not exposed for this account.";
-  return error?.message || "Usage metrics are unavailable.";
+  if (!error) return "Select an organization.";
+  if ([401, 403].includes(error?.status)) return "Plan or key scope.";
+  if (error?.status === 404) return "Not exposed.";
+  return "Unavailable.";
 }
 
 export default function Dashboard() {
@@ -84,23 +85,21 @@ export default function Dashboard() {
   const organizations = useOrganizationsQuery();
   const projects = useProjectsQuery();
   const projectList = projects.data?.projects || [];
-  const hasWorkspaceSelection = !!selectedOrganizationId;
-  const projectIds = hasWorkspaceSelection ? projectList.map((project: any) => project.id).filter(Boolean).slice(0, 100) : [];
-  const explicitOrgId = selectedOrganizationId && selectedOrganizationId !== DEFAULT_WORKSPACE_ID ? selectedOrganizationId : undefined;
-  const consumption = useConsumptionHistoryQuery({ projectIds, orgId: explicitOrgId });
-  const metricsRestricted = !!consumption.error;
-  const metricsMuted = !hasWorkspaceSelection || consumption.isLoading || metricsRestricted;
-  const metricHint = metricsRestricted ? usageRestrictionHint(consumption.error) : "current month";
+  const hasOrganization = !!selectedOrganizationId;
+  const selectedOrganization = organizations.data?.organizations?.find((org: any) => org.id === selectedOrganizationId);
+  const projectIds = hasOrganization ? projectList.map((project: any) => project.id).filter(Boolean).slice(0, 100) : [];
+  const consumption = useConsumptionHistoryQuery({ projectIds, orgId: selectedOrganizationId || undefined });
+  const metricsRestricted = hasOrganization && !!consumption.error;
+  const metricsMuted = !hasOrganization || consumption.isLoading || metricsRestricted;
 
-  const workspaces = useMemo(() => [
-    { id: DEFAULT_WORKSPACE_ID, name: "Default workspace", isDefault: true, description: "Projects visible without an explicit organization filter." },
-    ...(organizations.data?.organizations || []).map((org: any) => ({ ...org, description: org.plan ? `Plan: ${org.plan}` : org.handle || org.id })),
-  ], [organizations.data?.organizations]);
+  const organizationsList = useMemo(() => (
+    (organizations.data?.organizations || []).map((org: any) => ({ ...org, description: org.plan ? `Plan: ${org.plan}` : org.handle || org.id }))
+  ), [organizations.data?.organizations]);
 
   const branchQueries = useQueries({
     queries: projectIds.slice(0, 25).map(projectId => ({
       queryKey: ["platform-branches", projectId, settings.apiMode],
-      enabled: !!apiKey && hasWorkspaceSelection,
+      enabled: !!apiKey && hasOrganization,
       queryFn: ({ signal }: { signal: AbortSignal }) => NeonService.listBranches({ apiKey: apiKey!, mode: settings.apiMode, signal }, projectId),
       staleTime: 30_000,
     })),
@@ -109,7 +108,7 @@ export default function Dashboard() {
   const operationQueries = useQueries({
     queries: projectIds.slice(0, 25).map(projectId => ({
       queryKey: ["platform-operations", projectId, settings.apiMode],
-      enabled: !!apiKey && hasWorkspaceSelection,
+      enabled: !!apiKey && hasOrganization,
       queryFn: ({ signal }: { signal: AbortSignal }) => NeonService.listOperations({ apiKey: apiKey!, mode: settings.apiMode, signal }, projectId, 10),
       staleTime: 30_000,
     })),
@@ -136,65 +135,82 @@ export default function Dashboard() {
   const loadingBranches = branchQueries.some(query => query.isLoading);
   const loadingOperations = operationQueries.some(query => query.isLoading);
 
+  const usageStats = [
+    { label: "Compute", value: !hasOrganization ? "—" : consumption.isLoading ? "…" : metricsRestricted ? "—" : computeCuHours, hint: metricsRestricted || !hasOrganization ? usageRestrictionHint(consumption.error) : "CU-hrs", icon: Server },
+    { label: "Storage", value: !hasOrganization ? "—" : consumption.isLoading ? "…" : metricsRestricted ? "—" : storageGb, hint: metricsRestricted || !hasOrganization ? usageRestrictionHint(consumption.error) : "GB", icon: Database },
+    { label: "History", value: !hasOrganization ? "—" : consumption.isLoading ? "…" : metricsRestricted ? "—" : historyGb, hint: metricsRestricted || !hasOrganization ? usageRestrictionHint(consumption.error) : "GB", icon: BarChart3 },
+    { label: "Network", value: !hasOrganization ? "—" : consumption.isLoading ? "…" : metricsRestricted ? "—" : transferGb, hint: metricsRestricted || !hasOrganization ? usageRestrictionHint(consumption.error) : "GB", icon: Network },
+  ];
+
   return (
     <Page>
-      <PageHeader title="Dashboard" description="Platform overview across your Neon projects, usage, branches, and recent activity." />
+      <PageHeader
+        title={selectedOrganization ? `${selectedOrganization.name} dashboard` : "Dashboard"}
+        description={selectedOrganization ? "Organization overview across projects, branches, and recent Neon activity." : "Select an organization to open its platform dashboard."}
+      />
 
-      {!hasWorkspaceSelection && (
-        <div className="mb-5 hairline rounded-xl bg-card p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold">Choose a workspace first</div>
-              <div className="mt-1 text-xs text-muted-foreground">No organization is selected yet. Select an organization or the default workspace before loading project-scoped dashboard data.</div>
-            </div>
-            <Building2 className="size-5 text-muted-foreground shrink-0" />
+      <div className="mb-5 hairline rounded-xl bg-card p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold">Organizations</div>
+            <div className="mt-1 text-xs text-muted-foreground">Choose an organization to load its projects and dashboard. No default workspace fallback is shown.</div>
           </div>
-          <div className="mt-4 grid gap-2 md:grid-cols-2">
-            {organizations.isLoading ? (
-              <>
-                <Skeleton className="h-20" />
-                <Skeleton className="h-20" />
-              </>
-            ) : (
-              workspaces.map((workspace: any) => (
-                <button key={workspace.id} onClick={() => { setSelectedOrganizationId(workspace.id); playUiSound("nav"); }} className="rounded-lg border border-border p-3 text-left transition-colors hover:bg-accent/40">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Building2 className="size-4" />
-                    <span className="truncate">{workspace.name}</span>
-                    {workspace.isDefault && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">default</span>}
-                    {workspace.role && <span className="ml-auto rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">{workspace.role}</span>}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground truncate">{workspace.description || workspace.id}</div>
-                  <div className="mt-1 text-[10px] mono text-muted-foreground truncate">{workspace.id}</div>
-                </button>
-              ))
-            )}
-            {organizations.data?.unavailable && (
-              <div className="rounded-lg border border-border p-3 text-left md:col-span-2">
-                <div className="text-sm font-medium">Organization list unavailable</div>
-                <div className="mt-1 text-xs text-muted-foreground">This key may be organization-scoped or project-scoped. Use the default workspace to load accessible projects.</div>
-              </div>
-            )}
-          </div>
+          <Building2 className="size-5 text-muted-foreground shrink-0" />
         </div>
-      )}
+        <div className="mt-4 grid gap-2 md:grid-cols-2">
+          {organizations.isLoading ? (
+            <>
+              <Skeleton className="h-20" />
+              <Skeleton className="h-20" />
+            </>
+          ) : organizations.error ? (
+            <div className="md:col-span-2"><ErrorState error={organizations.error} onRetry={() => organizations.refetch()} /></div>
+          ) : organizationsList.length ? (
+            organizationsList.map((workspace: any) => (
+              <button key={workspace.id} onClick={() => { setSelectedOrganizationId(workspace.id); playUiSound("nav"); }} className={cn("rounded-lg border p-3 text-left transition-colors hover:bg-accent/40", workspace.id === selectedOrganizationId ? "border-primary bg-primary/5" : "border-border")}>
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Building2 className="size-4" />
+                  <span className="truncate">{workspace.name}</span>
+                  {workspace.role && <span className="ml-auto rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">{workspace.role}</span>}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground truncate">{workspace.description || workspace.id}</div>
+                <div className="mt-1 text-[10px] mono text-muted-foreground truncate">{workspace.id}</div>
+              </button>
+            ))
+          ) : (
+            <div className="md:col-span-2 rounded-lg border border-border p-4">
+              <div className="text-sm font-medium">No organizations returned</div>
+              <div className="mt-1 text-xs text-muted-foreground">This API key did not return an organization list. Connect a personal Neon API key that can list organizations.</div>
+            </div>
+          )}
+          {organizations.data?.unavailable && (
+            <div className="rounded-lg border border-border p-3 text-left md:col-span-2">
+              <div className="text-sm font-medium">Organization list unavailable</div>
+              <div className="mt-1 text-xs text-muted-foreground">This key may be scoped too narrowly to enumerate organizations.</div>
+            </div>
+          )}
+        </div>
+      </div>
 
-      {projects.isLoading && hasWorkspaceSelection ? <Skeleton className="h-32 w-full" /> : projects.error && hasWorkspaceSelection ? <ErrorState error={projects.error} onRetry={() => projects.refetch()} /> : (
+      {projects.isLoading && hasOrganization ? <Skeleton className="h-32 w-full" /> : projects.error && hasOrganization ? <ErrorState error={projects.error} onRetry={() => projects.refetch()} /> : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat label="Compute" value={!hasWorkspaceSelection ? "—" : consumption.isLoading ? "…" : metricsRestricted ? "—" : computeCuHours} hint={metricsRestricted || !hasWorkspaceSelection ? usageRestrictionHint(consumption.error) : "CU-hrs"} icon={Server} muted={metricsMuted} restricted={metricsRestricted} />
-            <Stat label="Storage" value={!hasWorkspaceSelection ? "—" : consumption.isLoading ? "…" : metricsRestricted ? "—" : storageGb} hint={metricsRestricted || !hasWorkspaceSelection ? usageRestrictionHint(consumption.error) : "GB"} icon={Database} muted={metricsMuted} restricted={metricsRestricted} />
-            <Stat label="History" value={!hasWorkspaceSelection ? "—" : consumption.isLoading ? "…" : metricsRestricted ? "—" : historyGb} hint={metricsRestricted || !hasWorkspaceSelection ? usageRestrictionHint(consumption.error) : "GB"} icon={BarChart3} muted={metricsMuted} restricted={metricsRestricted} />
-            <Stat label="Network transfer" value={!hasWorkspaceSelection ? "—" : consumption.isLoading ? "…" : metricsRestricted ? "—" : transferGb} hint={metricsRestricted || !hasWorkspaceSelection ? usageRestrictionHint(consumption.error) : "GB"} icon={Network} muted={metricsMuted} restricted={metricsRestricted} />
-            <Stat label="Projects" value={hasWorkspaceSelection ? projectList.length : "—"} icon={FolderGit2} muted={!hasWorkspaceSelection} />
-            <Stat label="Branches" value={!hasWorkspaceSelection ? "—" : loadingBranches ? "…" : allBranches.length} hint={projectIds.length > 25 ? "first 25 projects" : undefined} icon={GitBranch} muted={!hasWorkspaceSelection} />
-            <Stat label="Recent activity" value={!hasWorkspaceSelection ? "—" : loadingOperations ? "…" : allOperations.length} hint="operations as API activity" icon={Activity} muted={!hasWorkspaceSelection} />
-            <Stat label="Active projects" value={!hasWorkspaceSelection ? "—" : activeEndpoints || "—"} hint="reported by project metadata" icon={Cable} muted={!hasWorkspaceSelection} />
+            <Stat label="Projects" value={hasOrganization ? projectList.length : "—"} icon={FolderGit2} muted={!hasOrganization} />
+            <Stat label="Branches" value={!hasOrganization ? "—" : loadingBranches ? "…" : allBranches.length} hint={projectIds.length > 25 ? "first 25 projects" : undefined} icon={GitBranch} muted={!hasOrganization} />
+            <Stat label="Recent activity" value={!hasOrganization ? "—" : loadingOperations ? "…" : allOperations.length} hint="operations as API activity" icon={Activity} muted={!hasOrganization} />
+            <Stat label="Active projects" value={!hasOrganization ? "—" : activeEndpoints || "—"} hint="reported by project metadata" icon={Cable} muted={!hasOrganization} />
           </div>
 
-          {consumption.error && hasWorkspaceSelection && (
-            <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-muted-foreground">
-              Usage metrics are blocked by this account plan, API key scope, or Neon consumption history permissions. Project, branch, and activity data remain available below.
+          {metricsRestricted ? (
+            <div className="mt-3">
+              <div className="mb-2 text-[11px] text-muted-foreground">Usage metrics are limited by the current plan, API key scope, or Neon consumption history permissions.</div>
+              <div className="grid grid-cols-4 gap-2">
+                {usageStats.map(stat => <Stat key={stat.label} {...stat} muted restricted compact />)}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+              {usageStats.map(stat => <Stat key={stat.label} {...stat} muted={metricsMuted} />)}
             </div>
           )}
 
@@ -202,10 +218,10 @@ export default function Dashboard() {
             <div className="hairline rounded-lg bg-card">
               <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                 <div className="flex items-center gap-2 text-sm font-medium"><FolderGit2 className="size-4" /> Projects</div>
-                <Button asChild size="sm" variant="outline" disabled={!hasWorkspaceSelection}><Link to="/project/dashboard"><Plus className="size-4 mr-2" />Project dashboard</Link></Button>
+                <Button asChild size="sm" variant="outline" disabled={!hasOrganization}><Link to="/project/dashboard"><Plus className="size-4 mr-2" />Project dashboard</Link></Button>
               </div>
-              {!hasWorkspaceSelection ? <div className="p-6"><EmptyState title="Select a workspace" description="Project lists stay locked until an organization or the default workspace is selected above." /></div>
-                : !projectList.length ? <div className="p-6"><EmptyState title="No projects" description="No projects are available for this workspace or API key." /></div>
+              {!hasOrganization ? <div className="p-6"><EmptyState title="Select an organization" description="Project lists stay locked until an organization is selected above." /></div>
+                : !projectList.length ? <div className="p-6"><EmptyState title="No projects" description="No projects are available for this organization and API key." /></div>
                 : (
                   <ul className="divide-y divide-border">
                     {projectList.slice(0, 8).map((project: any) => (
@@ -228,7 +244,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                 <div className="flex items-center gap-2 text-sm font-medium"><Activity className="size-4" /> Recent commits / activity</div>
               </div>
-              {!hasWorkspaceSelection ? <div className="p-6"><EmptyState title="No workspace selected" description="Recent Neon operations appear after a workspace is selected." /></div>
+              {!hasOrganization ? <div className="p-6"><EmptyState title="No organization selected" description="Recent Neon operations appear after an organization is selected." /></div>
                 : loadingOperations ? <div className="p-4"><Skeleton className="h-20 w-full" /></div>
                 : !allOperations.length ? <div className="p-6"><EmptyState title="No recent activity" description="Neon exposes project operations here; commit-style activity appears when returned by the API." /></div>
                 : (
@@ -252,9 +268,9 @@ export default function Dashboard() {
             <div className="hairline rounded-lg bg-card md:col-span-2">
               <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                 <div className="flex items-center gap-2 text-sm font-medium"><GitBranch className="size-4" /> Latest branches</div>
-                <Button asChild size="sm" variant="outline" disabled={!hasWorkspaceSelection}><Link to="/branches"><TerminalSquare className="size-4 mr-2" />Manage branches</Link></Button>
+                <Button asChild size="sm" variant="outline" disabled={!hasOrganization}><Link to="/branches"><TerminalSquare className="size-4 mr-2" />Manage branches</Link></Button>
               </div>
-              {!hasWorkspaceSelection ? <div className="p-6"><EmptyState title="No workspace selected" description="Branches appear after a workspace and project context is available." /></div>
+              {!hasOrganization ? <div className="p-6"><EmptyState title="No organization selected" description="Branches appear after an organization and project context is available." /></div>
                 : loadingBranches ? <div className="p-4"><Skeleton className="h-20 w-full" /></div>
                 : !recentBranches.length ? <div className="p-6"><EmptyState title="No branches" description="Branches will appear here after project branch data is available." /></div>
                 : (
