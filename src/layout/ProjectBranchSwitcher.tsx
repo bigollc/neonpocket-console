@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Building2, Check, ChevronDown, FolderGit2, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useApp } from "@/state/AppContext";
-import { DEFAULT_WORKSPACE_ID, useBranchesQuery, useOrganizationsQuery, useProjectsQuery } from "@/state/queries";
+import { useBranchesQuery, useOrganizationsQuery, useProjectsQuery } from "@/state/queries";
 import { cn } from "@/lib/utils";
 
 export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const {
     selectedOrganizationId,
     setSelectedOrganizationId,
@@ -17,6 +18,7 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
     setSelectedProjectId,
     selectedBranchId,
     setSelectedBranchId,
+    resetProjectContext,
     playUiSound,
   } = useApp();
   const orgs = useOrganizationsQuery();
@@ -25,16 +27,13 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
-  const defaultName = "Default workspace";
-  const isMainDashboard = location.pathname === "/dashboard";
+  const isProjectRoute = location.pathname.startsWith("/project") || location.pathname.startsWith("/branches") || location.pathname.startsWith("/integrations") || location.pathname.startsWith("/auth");
+  const isBranchRoute = location.pathname.startsWith("/branch") || location.pathname.startsWith("/backend/data-api");
+  const showProjectPicker = isProjectRoute || isBranchRoute || !!selectedProjectId;
+  const showBranchPicker = isBranchRoute || !!selectedBranchId;
   const canSelectProject = !!selectedOrganizationId;
   const canSelectBranch = !!selectedOrganizationId && !!selectedProjectId;
-  const showProjectPicker = !isMainDashboard || canSelectProject;
-  const showBranchPicker = !isMainDashboard || canSelectBranch;
-  const workspaces = useMemo(() => [
-    { id: DEFAULT_WORKSPACE_ID, name: defaultName, isDefault: true },
-    ...(orgs.data?.organizations || []),
-  ], [orgs.data?.organizations, defaultName]);
+  const workspaces = useMemo(() => (orgs.data?.organizations || []), [orgs.data?.organizations]);
 
   useEffect(() => {
     if (selectedOrganizationId && !workspaces.some(w => w.id === selectedOrganizationId) && !orgs.isLoading) {
@@ -70,7 +69,7 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
     <div className={cn("flex items-center gap-1.5", compact && "scale-95 origin-left")}>
       <Popover open={workspaceOpen} onOpenChange={setWorkspaceOpen}>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="h-8 max-w-[44vw] truncate">
+          <Button variant="outline" size="sm" className="h-8 max-w-[46vw] truncate">
             <Building2 className="size-3.5 mr-1.5 shrink-0" />
             <span className="truncate text-xs">{workspace?.name || "Select organization"}</span>
             <ChevronDown className="size-3 ml-1 opacity-60" />
@@ -81,16 +80,18 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
             <CommandInput placeholder="Search organizations…" />
             <CommandList>
               <CommandEmpty>{orgs.isLoading ? "Loading…" : "No organizations"}</CommandEmpty>
-              <CommandGroup heading="Workspaces">
+              <CommandGroup heading="Organizations">
                 {workspaces.map((org: any) => (
                   <CommandItem key={org.id} value={`${org.name} ${org.id}`} onSelect={() => {
                     setSelectedOrganizationId(org.id);
+                    resetProjectContext();
                     setWorkspaceOpen(false);
+                    navigate("/dashboard");
                     playUiSound("nav");
                   }}>
                     <Building2 className="size-3.5 mr-2 opacity-70" />
                     <span className="truncate">{org.name}</span>
-                    {org.isDefault && <span className="ml-2 rounded bg-muted px-1 text-[10px] text-muted-foreground">default</span>}
+                    {org.plan && <span className="ml-2 rounded bg-muted px-1 text-[10px] text-muted-foreground">{org.plan}</span>}
                     {org.id === selectedOrganizationId && <Check className="size-3.5 ml-auto" />}
                   </CommandItem>
                 ))}
@@ -119,6 +120,7 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
                     <CommandItem key={p.id} value={`${p.name} ${p.id}`} onSelect={() => {
                       setSelectedProjectId(p.id);
                       setProjectOpen(false);
+                      if (!location.pathname.startsWith("/project")) navigate("/project/dashboard");
                       playUiSound("nav");
                     }}>
                       <FolderGit2 className="size-3.5 mr-2 opacity-70" />
@@ -153,6 +155,7 @@ export function ProjectBranchSwitcher({ compact = false }: { compact?: boolean }
                     <CommandItem key={b.id} value={`${b.name} ${b.id}`} onSelect={() => {
                       setSelectedBranchId(b.id);
                       setBranchOpen(false);
+                      if (!location.pathname.startsWith("/branch")) navigate("/branch/overview");
                       playUiSound("nav");
                     }}>
                       <GitBranch className="size-3.5 mr-2 opacity-70" />
