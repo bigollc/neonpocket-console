@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Cloud, Lock, LogOut, RotateCw, ShieldCheck, Trash2, Volume2 } from "lucide-react";
+import { ClipboardCopy, Cloud, Lock, LogOut, RotateCw, ShieldCheck, Trash2, Volume2 } from "lucide-react";
 import { removeVaultPassphrase, vaultUsesPassphrase } from "@/lib/vault";
 import { clearDeviceAuth, getDeviceAuthRecord, hasDeviceAuth, setupDeviceAuth, supportsDeviceAuth, verifyDeviceAuth } from "@/lib/deviceAuth";
 import { syncCloudProfile, type CloudProfileResult } from "@/lib/cloudProfile";
@@ -57,6 +57,7 @@ export default function Settings() {
   const [deviceAuthBusy, setDeviceAuthBusy] = useState(false);
   const [cloudSyncBusy, setCloudSyncBusy] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus | null>(() => readCloudSyncStatus());
+  const [confirmClearLogs, setConfirmClearLogs] = useState(false);
 
   const cloudSyncLabel = useMemo(() => {
     if (!cloudSyncStatus) return "not synced yet";
@@ -64,6 +65,16 @@ export default function Settings() {
     if (cloudSyncStatus.ok && !cloudSyncStatus.stored) return `not stored · ${cloudSyncStatus.reason || cloudSyncStatus.status}`;
     return `failed · ${cloudSyncStatus.status || "network"}`;
   }, [cloudSyncStatus]);
+
+  const diagnosticsText = useMemo(() => {
+    return diagnostics.map(d => [
+      d.status,
+      `${d.ms}ms`,
+      d.route,
+      d.ok ? "ok" : (d.errorMessage || "failed"),
+      d.ts,
+    ].join("\t")).join("\n");
+  }, [diagnostics]);
 
   useEffect(() => {
     vaultUsesPassphrase().then(setUsesPassphrase).catch(() => setUsesPassphrase(false));
@@ -143,7 +154,7 @@ export default function Settings() {
         settings: {
           greetings: settings.greetings,
           sounds: settings.sounds,
-          apiMode: settings.apiMode,
+          apiMode: "proxy",
           localHistory: settings.localHistory,
         },
       });
@@ -171,9 +182,27 @@ export default function Settings() {
 
   function toggleCloudProfileSync(enabled: boolean) {
     updateSettings({ cloudProfileSync: enabled });
-    if (enabled) {
-      setTimeout(() => void runCloudProfileSync("toggle"), 0);
+    if (enabled) setTimeout(() => void runCloudProfileSync("toggle"), 0);
+  }
+
+  async function copyDiagnostics() {
+    await navigator.clipboard.writeText(diagnosticsText || "No requests yet.");
+    playUiSound("success");
+    toast.success("Diagnostics copied");
+  }
+
+  function clearLogsWithConfirm() {
+    if (!confirmClearLogs) {
+      setConfirmClearLogs(true);
+      playUiSound("warning");
+      toast.warning("Tap Clear log again to confirm");
+      window.setTimeout(() => setConfirmClearLogs(false), 6000);
+      return;
     }
+    clearDiagnostics();
+    setConfirmClearLogs(false);
+    playUiSound("soft");
+    toast.success("Diagnostics cleared");
   }
 
   return (
@@ -234,15 +263,10 @@ export default function Settings() {
 
       <div className="hairline rounded-lg p-4 bg-card mt-4">
         <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">API & Cloud profile</div>
-        <Row title="API transport" desc="Auto tries direct browser access first, then falls back to the configured Cloudflare Worker proxy when needed.">
-          <Select value={settings.apiMode} onValueChange={(v: any) => updateSettings({ apiMode: v })}>
-            <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">Auto</SelectItem>
-              <SelectItem value="direct">Direct</SelectItem>
-              <SelectItem value="proxy">Proxy</SelectItem>
-            </SelectContent>
-          </Select>
+        <Row title="API transport" desc="Locked to Cloudflare Worker proxy because direct browser requests are blocked by Neon CORS/preflight in production browsers.">
+          <div className="inline-flex items-center rounded-md border bg-muted/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground cursor-not-allowed select-none">
+            Proxy only
+          </div>
         </Row>
         <Row title="Cloud profile sync" desc="Optionally store profile metadata, settings, IP, user agent, and key hash/hint in Cloudflare D1. The Neon API key itself is not stored.">
           <Switch checked={settings.cloudProfileSync} onCheckedChange={toggleCloudProfileSync} />
@@ -266,7 +290,7 @@ export default function Settings() {
           </div>
           <div className="text-[11px] text-muted-foreground flex items-start gap-1.5">
             <Cloud className="size-3.5 mt-0.5 shrink-0" />
-            <span>Turning sync on now runs a live check. If D1 is not bound or the deploy still uses a placeholder database id, this status panel will show it.</span>
+            <span>Turning sync on now runs a live check. If D1 fails, this panel shows the returned status and reason.</span>
           </div>
         </div>
         <Row title="Local history (SQL editor)" desc="Save scratch SQL on this device only.">
@@ -324,11 +348,18 @@ export default function Settings() {
         <Row title="Last failed route">
           <span className="block text-sm mono break-words">{lastFailed ? `${lastFailed.status} · ${lastFailed.route}` : "—"}</span>
         </Row>
-        <Row title="Network hint" desc="Status 0 usually means direct browser access failed or the configured Cloudflare Worker proxy is unavailable.">
-          <span className="text-xs text-muted-foreground">See Diagnostics</span>
+        <Row title="Network hint" desc="All Neon API calls are locked to the Cloudflare Worker proxy. Direct browser mode is disabled.">
+          <span className="text-xs text-muted-foreground">Proxy only</span>
         </Row>
         <Row title="Recent requests">
-          <Button variant="ghost" size="sm" onClick={() => { clearDiagnostics(); playUiSound("soft"); }}>Clear log</Button>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={copyDiagnostics} disabled={diagnostics.length === 0}>
+              <ClipboardCopy className="size-3.5 mr-1.5" />Copy
+            </Button>
+            <Button variant={confirmClearLogs ? "destructive" : "ghost"} size="sm" onClick={clearLogsWithConfirm} disabled={diagnostics.length === 0}>
+              {confirmClearLogs ? "Confirm clear" : "Clear log"}
+            </Button>
+          </div>
         </Row>
         <div className="mt-2 max-h-56 overflow-auto hairline rounded-md text-[11px] mono">
           {diagnostics.length === 0 ? <div className="p-3 text-muted-foreground">No requests yet.</div> :
