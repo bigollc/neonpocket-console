@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Page, PageHeader } from "@/layout/PageHeader";
 import { useApp } from "@/state/AppContext";
 import { Switch } from "@/components/ui/switch";
@@ -7,9 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Lock, LogOut, ShieldCheck, Trash2, Volume2 } from "lucide-react";
+import { Cloud, Lock, LogOut, RotateCw, ShieldCheck, Trash2, Volume2 } from "lucide-react";
 import { removeVaultPassphrase, vaultUsesPassphrase } from "@/lib/vault";
-import { clearDeviceAuth, getDeviceAuthRecord, setupDeviceAuth, supportsDeviceAuth, verifyDeviceAuth } from "@/lib/deviceAuth";
+import { clearDeviceAuth, getDeviceAuthRecord, hasDeviceAuth, setupDeviceAuth, supportsDeviceAuth, verifyDeviceAuth } from "@/lib/deviceAuth";
+import { syncCloudProfile, type CloudProfileResult } from "@/lib/cloudProfile";
+import { normalizeUser, useCurrentUserQuery, userEmail } from "@/state/queries";
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
   return (
@@ -23,15 +25,45 @@ function Row({ title, desc, children }: { title: string; desc?: string; children
   );
 }
 
+const CLOUD_SYNC_STATUS_KEY = "neonpocket.cloud-profile.last-sync.v1";
+
+type CloudSyncStatus = CloudProfileResult & { at: string };
+
+function readCloudSyncStatus(): CloudSyncStatus | null {
+  try {
+    const raw = localStorage.getItem(CLOUD_SYNC_STATUS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function userNameFromPayload(user: any, email: string) {
+  return user?.name || user?.login || email || "Neon user";
+}
+
 export default function Settings() {
-  const { settings, updateSettings, signOut, forgetStoredKey, hasStoredVault, diagnostics, clearDiagnostics, clearLocalCache, refreshVaultState, playUiSound } = useApp();
+  const { apiKey, settings, updateSettings, signOut, forgetStoredKey, hasStoredVault, diagnostics, clearDiagnostics, clearLocalCache, refreshVaultState, playUiSound } = useApp();
   const navigate = useNavigate();
+  const currentUser = useCurrentUserQuery();
+  const user = normalizeUser(currentUser.data);
+  const email = userEmail(user);
+  const userName = userNameFromPayload(user, email);
   const lastFailed = diagnostics.find(d => !d.ok);
   const [usesPassphrase, setUsesPassphrase] = useState(false);
   const [passphrase, setPassphrase] = useState("");
   const [removingPassphrase, setRemovingPassphrase] = useState(false);
   const [deviceAuthEnabled, setDeviceAuthEnabled] = useState(false);
   const [deviceAuthBusy, setDeviceAuthBusy] = useState(false);
+  const [cloudSyncBusy, setCloudSyncBusy] = useState(false);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus | null>(() => readCloudSyncStatus());
+
+  const cloudSyncLabel = useMemo(() => {
+    if (!cloudSyncStatus) return "not synced yet";
+    if (cloudSyncStatus.ok && cloudSyncStatus.stored) return `stored · ${cloudSyncStatus.status}`;
+    if (cloudSyncStatus.ok && !cloudSyncStatus.stored) return `not stored · ${cloudSyncStatus.reason || cloudSyncStatus.status}`;
+    return `failed · ${cloudSyncStatus.status || "network"}`;
+  }, [cloudSyncStatus]);
 
   useEffect(() => {
     vaultUsesPassphrase().then(setUsesPassphrase).catch(() => setUsesPassphrase(false));
@@ -92,6 +124,56 @@ export default function Settings() {
     setDeviceAuthEnabled(false);
     playUiSound("warning");
     toast.success("Device authentication disabled");
+  }
+
+  async function runCloudProfileSync(source: "manual" | "toggle" = "manual") {
+    if (!apiKey) {
+      playUiSound("warning");
+      toast.error("Connect your Neon API key first", { description: "Cloud profile sync needs a verified in-memory key for this session." });
+      return;
+    }
+
+    setCloudSyncBusy(true);
+    try {
+      const result = await syncCloudProfile({
+        apiKey,
+        userName,
+        email,
+        deviceAuthEnabled: hasDeviceAuth(),
+        settings: {
+          greetings: settings.greetings,
+          sounds: settings.sounds,
+          apiMode: settings.apiMode,
+          localHistory: settings.localHistory,
+        },
+      });
+      const status = { ...result, at: new Date().toISOString() };
+      setCloudSyncStatus(status);
+      localStorage.setItem(CLOUD_SYNC_STATUS_KEY, JSON.stringify(status));
+
+      if (result.ok && result.stored) {
+        playUiSound("success");
+        toast.success("Cloud profile synced", { description: "D1 stored the profile/audit metadata successfully." });
+      } else if (result.ok && !result.stored) {
+        playUiSound("warning");
+        toast.warning("Cloud profile endpoint responded", { description: result.reason || "D1 binding is not storing records yet." });
+      } else {
+        playUiSound("warning");
+        toast.error("Cloud profile sync failed", { description: result.message || result.reason || `Status ${result.status}` });
+      }
+    } catch (error: any) {
+      playUiSound("warning");
+      toast.error(source === "toggle" ? "Cloud sync could not start" : "Cloud profile sync failed", { description: error?.message || "Unknown error" });
+    } finally {
+      setCloudSyncBusy(false);
+    }
+  }
+
+  function toggleCloudProfileSync(enabled: boolean) {
+    updateSettings({ cloudProfileSync: enabled });
+    if (enabled) {
+      setTimeout(() => void runCloudProfileSync("toggle"), 0);
+    }
   }
 
   return (
@@ -163,8 +245,30 @@ export default function Settings() {
           </Select>
         </Row>
         <Row title="Cloud profile sync" desc="Optionally store profile metadata, settings, IP, user agent, and key hash/hint in Cloudflare D1. The Neon API key itself is not stored.">
-          <Switch checked={settings.cloudProfileSync} onCheckedChange={v => updateSettings({ cloudProfileSync: v })} />
+          <Switch checked={settings.cloudProfileSync} onCheckedChange={toggleCloudProfileSync} />
         </Row>
+        <div className="py-3 border-b border-border space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">Cloud sync status</div>
+              <div className="text-xs text-muted-foreground mt-0.5 break-words">
+                {cloudSyncLabel}{cloudSyncStatus?.at ? ` · ${new Date(cloudSyncStatus.at).toLocaleString()}` : ""}
+              </div>
+              {(cloudSyncStatus?.reason || cloudSyncStatus?.message) && (
+                <div className="text-[11px] text-muted-foreground mt-1 break-words mono">
+                  {cloudSyncStatus.reason || cloudSyncStatus.message}
+                </div>
+              )}
+            </div>
+            <Button size="sm" variant="outline" onClick={() => void runCloudProfileSync("manual")} disabled={!settings.cloudProfileSync || !apiKey || cloudSyncBusy}>
+              <RotateCw className={`size-4 mr-1.5 ${cloudSyncBusy ? "animate-spin" : ""}`} /> Sync now
+            </Button>
+          </div>
+          <div className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+            <Cloud className="size-3.5 mt-0.5 shrink-0" />
+            <span>Turning sync on now runs a live check. If D1 is not bound or the deploy still uses a placeholder database id, this status panel will show it.</span>
+          </div>
+        </div>
         <Row title="Local history (SQL editor)" desc="Save scratch SQL on this device only.">
           <Switch checked={settings.localHistory} onCheckedChange={v => updateSettings({ localHistory: v })} />
         </Row>
